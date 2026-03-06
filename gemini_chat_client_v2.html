@@ -113,6 +113,20 @@
   .bubble-wrap.ai .bubble {
     background: var(--ai-bg); border: 1px solid var(--border); border-bottom-left-radius: 4px;
   }
+
+  /* Transcript bubble — slightly subdued */
+  .bubble.transcript {
+    background: transparent;
+    border-color: rgba(255,255,255,.06);
+    color: rgba(232,232,240,.6);
+    font-size: 13px;
+    font-style: italic;
+  }
+  .bubble-wrap.user .bubble.transcript {
+    background: transparent;
+    border-color: rgba(108,99,255,.1);
+  }
+
   .bubble-meta {
     font-family: var(--font-mono); font-size: 10px; color: var(--muted);
     margin: 4px 4px 0; display: flex; align-items: center; gap: 5px;
@@ -126,80 +140,88 @@
   .thinking-dot:nth-child(3) { animation-delay: .3s; }
   @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
 
-  /* ── Intent Card ── */
-  .intent-card {
+  /* ── Tool Call Card ── */
+  .tool-card {
     width: min(540px, 92vw);
-    background: var(--ai-bg);
-    border: 1px solid var(--border);
     border-radius: var(--radius);
     border-bottom-left-radius: 4px;
     overflow: hidden;
-  }
-
-  .intent-card-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px 8px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(108,99,255,.04);
-  }
-  .intent-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
-    padding: 3px 10px; border-radius: 20px;
-    letter-spacing: 0.3px;
-  }
-  .intent-badge.ROADSIDE_ASSISTANCE { background: rgba(255,184,48,.12); color: var(--amber); border: 1px solid rgba(255,184,48,.25); }
-  .intent-badge.TOW_TRUCK_REQUIRED  { background: rgba(255,77,109,.12);  color: var(--red);   border: 1px solid rgba(255,77,109,.25); }
-  .intent-badge.SPARE_PARTS_SEARCH  { background: rgba(108,99,255,.12);  color: var(--accent);border: 1px solid rgba(108,99,255,.25); }
-  .intent-badge.GARAGE_BOOKING      { background: rgba(0,229,160,.12);   color: var(--green); border: 1px solid rgba(0,229,160,.25); }
-  .intent-badge.GREETING            { background: rgba(255,107,157,.12); color: var(--accent2);border: 1px solid rgba(255,107,157,.25); }
-  .intent-badge.UNCLEAR             { background: rgba(90,90,114,.15);   color: var(--muted); border: 1px solid rgba(90,90,114,.25); }
-
-  .confidence-pill {
-    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
-    background: var(--panel); padding: 2px 8px; border-radius: 20px;
     border: 1px solid var(--border);
   }
 
-  .intent-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  /* Per-tool accent colours */
+  .tool-card.request_roadside_assistance { border-color: rgba(255,184,48,.3);  }
+  .tool-card.request_tow_truck           { border-color: rgba(255,77,109,.3);  }
+  .tool-card.search_spare_parts          { border-color: rgba(108,99,255,.3);  }
+  .tool-card.book_garage_service         { border-color: rgba(0,229,160,.3);   }
 
-  .ic-row { display: flex; flex-direction: column; gap: 3px; }
-  .ic-label {
+  .tool-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px 9px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tool-card.request_roadside_assistance .tool-card-header { background: rgba(255,184,48,.06); }
+  .tool-card.request_tow_truck           .tool-card-header { background: rgba(255,77,109,.06); }
+  .tool-card.search_spare_parts          .tool-card-header { background: rgba(108,99,255,.06); }
+  .tool-card.book_garage_service         .tool-card-header { background: rgba(0,229,160,.06);  }
+
+  .tool-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+    padding: 3px 11px; border-radius: 20px; letter-spacing: 0.3px;
+  }
+  .tool-card.request_roadside_assistance .tool-badge { background: rgba(255,184,48,.12); color: var(--amber);  border: 1px solid rgba(255,184,48,.25); }
+  .tool-card.request_tow_truck           .tool-badge { background: rgba(255,77,109,.12); color: var(--red);    border: 1px solid rgba(255,77,109,.25); }
+  .tool-card.search_spare_parts          .tool-badge { background: rgba(108,99,255,.12); color: var(--accent); border: 1px solid rgba(108,99,255,.25); }
+  .tool-card.book_garage_service         .tool-badge { background: rgba(0,229,160,.12);  color: var(--green);  border: 1px solid rgba(0,229,160,.25);  }
+
+  .triggered-chip {
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 2px 9px; border-radius: 20px;
+    background: rgba(0,229,160,.08); color: var(--green);
+    border: 1px solid rgba(0,229,160,.2);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .triggered-chip::before {
+    content: ''; display: inline-block;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 5px var(--green);
+    animation: blink .8s infinite;
+  }
+
+  .tool-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: var(--ai-bg); }
+
+  .tc-section { display: flex; flex-direction: column; gap: 5px; }
+  .tc-label {
     font-family: var(--font-mono); font-size: 9.5px; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.8px;
   }
-  .ic-value { font-size: 13.5px; line-height: 1.5; color: var(--text); }
-  .ic-value.query-val { color: rgba(232,232,240,.65); font-style: italic; }
 
-  .ic-entities {
-    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px;
+  /* Args grid */
+  .args-grid { display: flex; flex-direction: column; gap: 4px; }
+  .arg-row {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 13px; line-height: 1.5;
   }
-  .entity-chip {
-    font-family: var(--font-mono); font-size: 10px;
-    background: rgba(108,99,255,.1); color: var(--accent);
-    border: 1px solid rgba(108,99,255,.2);
-    padding: 2px 9px; border-radius: 20px;
+  .arg-key {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--muted); flex-shrink: 0; min-width: 110px;
   }
+  .arg-val { color: var(--text); }
 
-  .intent-card-footer {
-    padding: 6px 14px 10px;
-    display: flex; align-items: center; gap: 8px;
+  /* Result block */
+  .result-block {
+    font-family: var(--font-mono); font-size: 11.5px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px;
+    display: flex; flex-direction: column; gap: 5px;
   }
-  .final-chip {
-    font-family: var(--font-mono); font-size: 10px;
-    padding: 2px 9px; border-radius: 20px;
-    border: 1px solid;
-  }
-  .final-chip.yes { background: rgba(0,229,160,.08); color: var(--green); border-color: rgba(0,229,160,.2); }
-  .final-chip.no  { background: rgba(255,184,48,.08); color: var(--amber); border-color: rgba(255,184,48,.2); }
-
-  .audio-badge {
-    margin-left: auto;
-    display: inline-flex; align-items: center; gap: 5px;
-    font-family: var(--font-mono); font-size: 10px;
-    color: var(--accent); background: rgba(108,99,255,.1);
-    padding: 2px 8px; border-radius: 20px; border: 1px solid rgba(108,99,255,.2);
-  }
+  .result-row { display: flex; gap: 10px; align-items: baseline; }
+  .result-key { color: var(--muted); min-width: 90px; flex-shrink: 0; }
+  .result-val { color: var(--text); }
+  .result-val.ok     { color: var(--green); }
+  .result-val.eta    { color: var(--amber); }
+  .result-val.accent { color: var(--accent); }
 
   /* ── Input area ── */
   .input-area {
@@ -281,9 +303,6 @@
     color: var(--muted); font-family: var(--font-mono); font-size: 12px; text-align: center;
   }
   .empty-state .icon { font-size: 38px; margin-bottom: 6px; opacity: .4; }
-
-  /* Intent icon map */
-  .intent-icon { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -354,8 +373,11 @@ let voiceWs = null, textWs = null;
 let mediaRecorder = null, audioChunks = [], isRecording = false;
 let audioQueue = [], isPlayingAudio = false;
 let thinkingBubble = null;
-// Pending intent card waiting to be rendered after audio finishes
-let pendingIntentCard = null;
+// Pending tool card waiting to be rendered after audio finishes
+let pendingToolCard = null;
+// Live streaming transcript bubble references
+let streamingGeminiTranscriptBubble = null;
+let streamingGeminiTranscriptText   = '';
 
 // ── Elements ──────────────────────────────────────────────────────────────────
 const msgContainer = document.getElementById('messages');
@@ -370,14 +392,12 @@ const voiceHint    = document.getElementById('voiceHint');
 const speakingBar  = document.getElementById('speakingBar');
 const hostInput    = document.getElementById('hostInput');
 
-// ── Intent metadata ───────────────────────────────────────────────────────────
-const INTENT_META = {
-  ROADSIDE_ASSISTANCE: { icon: '🔧', label: 'Roadside Assistance' },
-  TOW_TRUCK_REQUIRED:  { icon: '🚛', label: 'Tow Truck Required'  },
-  SPARE_PARTS_SEARCH:  { icon: '🔩', label: 'Spare Parts Search'  },
-  GARAGE_BOOKING:      { icon: '🏪', label: 'Garage Booking'      },
-  GREETING:            { icon: '👋', label: 'Greeting'            },
-  UNCLEAR:             { icon: '❓', label: 'Unclear'             },
+// ── Tool metadata ─────────────────────────────────────────────────────────────
+const TOOL_META = {
+  request_roadside_assistance: { icon: '🔧', label: 'Roadside Assistance' },
+  request_tow_truck:           { icon: '🚛', label: 'Tow Truck'           },
+  search_spare_parts:          { icon: '🔩', label: 'Spare Parts Search'  },
+  book_garage_service:         { icon: '🏪', label: 'Garage Booking'      },
 };
 
 // ── Status UI ─────────────────────────────────────────────────────────────────
@@ -386,7 +406,7 @@ function setStatus(state, label) {
   statusText.textContent = label;
 }
 
-// ── WebSocket connection ──────────────────────────────────────────────────────
+// ── WebSocket connections ─────────────────────────────────────────────────────
 function connectVoice() {
   try {
     voiceWs = new WebSocket(voiceUrl());
@@ -411,6 +431,7 @@ function connectText() {
 
 // ── WS message router ─────────────────────────────────────────────────────────
 function handleWsMessage(event, source) {
+  // Binary PCM audio chunk
   if (event.data instanceof ArrayBuffer) {
     audioQueue.push(event.data);
     if (!isPlayingAudio) drainAudioQueue();
@@ -420,30 +441,61 @@ function handleWsMessage(event, source) {
   let msg;
   try { msg = JSON.parse(event.data); } catch { return; }
 
-  // Intent card — buffer it; render after audio finishes
-  if (msg.type === 'intent') {
-    pendingIntentCard = msg;
+  // ── Typed frames from the new backend ──────────────────────────────────────
+
+  // Tool call triggered — buffer and render after audio
+  if (msg.type === 'tool_call') {
+    pendingToolCard = msg;
     return;
   }
 
+  // Gemini spoken-text transcript — stream it into a live bubble
+  if (msg.type === 'gemini_transcript') {
+    hideThinkingBubble();
+    appendGeminiTranscript(msg.text);
+    return;
+  }
+
+  // User voice input transcript — display as a user bubble update
+  if (msg.type === 'user_transcript') {
+    updateUserTranscriptBubble(msg.text);
+    return;
+  }
+
+  // ── Status frames ──────────────────────────────────────────────────────────
   switch (msg.status) {
     case 'ready':
-      setStatus('connected', 'Ready'); break;
+      setStatus('connected', 'Ready');
+      break;
+
     case 'processing':
       setStatus('processing', 'Thinking…');
-      showThinkingBubble(); break;
+      showThinkingBubble();
+      // Reset streaming transcript for the new turn
+      streamingGeminiTranscriptBubble = null;
+      streamingGeminiTranscriptText   = '';
+      break;
+
     case 'done':
       hideThinkingBubble();
-      // If no audio queued (text-only response edge case), render card now
-      if (!isPlayingAudio && audioQueue.length === 0 && pendingIntentCard) {
-        renderIntentCard(pendingIntentCard);
-        pendingIntentCard = null;
+      // Finalise the streaming transcript bubble (lock it in)
+      finaliseGeminiTranscript();
+      // Render tool card after audio drains; or now if no audio is pending
+      if (!isPlayingAudio && audioQueue.length === 0 && pendingToolCard) {
+        renderToolCard(pendingToolCard);
+        pendingToolCard = null;
         setStatus('connected', 'Ready');
       }
       break;
+
     case 'interrupted':
-      audioQueue = []; pendingIntentCard = null;
-      setStatus('connected', 'Ready'); break;
+      audioQueue      = [];
+      pendingToolCard = null;
+      streamingGeminiTranscriptBubble = null;
+      streamingGeminiTranscriptText   = '';
+      setStatus('connected', 'Ready');
+      break;
+
     case 'error':
       hideThinkingBubble();
       setStatus('error', 'Error');
@@ -452,7 +504,136 @@ function handleWsMessage(event, source) {
   }
 }
 
-// ── Audio playback ─────────────────────────────────────────────────────────────
+// ── Transcript streaming helpers ──────────────────────────────────────────────
+// Gemini transcripts arrive as incremental text chunks while audio plays.
+// We stream them into a single bubble so it feels live.
+
+function appendGeminiTranscript(chunk) {
+  if (!chunk) return;
+  hideEmpty();
+
+  if (!streamingGeminiTranscriptBubble) {
+    // Create the transcript bubble the first time
+    const wrap   = document.createElement('div');
+    wrap.className = 'bubble-wrap ai';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble transcript';
+
+    const meta = document.createElement('div');
+    meta.className = 'bubble-meta';
+    meta.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      </svg>
+      MyDrive AI · <span class="ts-time">${new Date().toLocaleTimeString()}</span>`;
+
+    wrap.appendChild(bubble);
+    wrap.appendChild(meta);
+    msgContainer.appendChild(wrap);
+
+    streamingGeminiTranscriptBubble = bubble;
+    streamingGeminiTranscriptText   = '';
+  }
+
+  streamingGeminiTranscriptText += chunk;
+  streamingGeminiTranscriptBubble.textContent = streamingGeminiTranscriptText;
+  scrollToBottom();
+}
+
+function finaliseGeminiTranscript() {
+  // Nothing to do structurally — bubble is already in DOM.
+  // Just null out the reference so the next turn starts fresh.
+  streamingGeminiTranscriptBubble = null;
+  streamingGeminiTranscriptText   = '';
+}
+
+// For voice input: the first bubble shows "🎙️ Voice message";
+// when we get the user_transcript we update it with the actual words.
+let lastUserVoiceBubble = null;
+
+function updateUserTranscriptBubble(text) {
+  if (!text) return;
+  if (lastUserVoiceBubble) {
+    // Replace the placeholder text with the real transcription
+    const bubble = lastUserVoiceBubble.querySelector('.bubble');
+    if (bubble) bubble.textContent = `🎙️ "${text}"`;
+    lastUserVoiceBubble = null; // consumed
+  } else {
+    // Fallback: render as a fresh user bubble (e.g. transcript arrives late)
+    addBubble('user', `🎙️ "${text}"`, 'voice');
+  }
+}
+
+// ── Tool card renderer ────────────────────────────────────────────────────────
+function renderToolCard(data) {
+  hideEmpty();
+  const toolName = data.tool || 'unknown';
+  const args     = data.args   || {};
+  const result   = data.result || {};
+  const meta     = TOOL_META[toolName] || { icon: '⚙️', label: toolName };
+
+  // Build arguments rows
+  const argsHtml = Object.entries(args).length
+    ? Object.entries(args).map(([k, v]) =>
+        `<div class="arg-row">
+          <span class="arg-key">${escHtml(k)}</span>
+          <span class="arg-val">${escHtml(String(v))}</span>
+        </div>`
+      ).join('')
+    : '<span style="color:var(--muted);font-size:12px">none</span>';
+
+  // Colour-code known result fields
+  const resultHtml = Object.entries(result).map(([k, v]) => {
+    let cls = '';
+    if (k === 'status')       cls = 'ok';
+    else if (k.includes('eta') || k.includes('time') || k.includes('available')) cls = 'eta';
+    else if (k.includes('count') || k.includes('type') || k.includes('service')) cls = 'accent';
+    return `<div class="result-row">
+      <span class="result-key">${escHtml(k)}</span>
+      <span class="result-val ${cls}">${escHtml(String(v))}</span>
+    </div>`;
+  }).join('');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap ai';
+  wrap.innerHTML = `
+    <div class="tool-card ${escHtml(toolName)}">
+      <div class="tool-card-header">
+        <span class="tool-badge">
+          <span>${meta.icon}</span>
+          ${escHtml(meta.label)}
+        </span>
+        <span class="triggered-chip">Triggered</span>
+      </div>
+      <div class="tool-card-body">
+        <div class="tc-section">
+          <span class="tc-label">Parameters</span>
+          <div class="args-grid">${argsHtml}</div>
+        </div>
+        <div class="tc-section">
+          <span class="tc-label">Result</span>
+          <div class="result-block">${resultHtml}</div>
+        </div>
+      </div>
+    </div>
+    <div class="bubble-meta" style="margin-top:5px">
+      MyDrive AI · ${new Date().toLocaleTimeString()}
+    </div>
+  `;
+
+  msgContainer.appendChild(wrap);
+  scrollToBottom();
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Audio playback ────────────────────────────────────────────────────────────
 function pcmToWav(pcmBuffer, sampleRate = 24000) {
   const numChannels = 1, bitsPerSample = 16;
   const byteRate   = sampleRate * numChannels * bitsPerSample / 8;
@@ -505,74 +686,11 @@ async function drainAudioQueue() {
   speakingBar.classList.remove('active');
   setStatus('connected', 'Ready');
 
-  // Now that audio is done, render the buffered intent card
-  if (pendingIntentCard) {
-    renderIntentCard(pendingIntentCard);
-    pendingIntentCard = null;
+  // Render the buffered tool card now that audio is done
+  if (pendingToolCard) {
+    renderToolCard(pendingToolCard);
+    pendingToolCard = null;
   }
-}
-
-// ── Intent card renderer ──────────────────────────────────────────────────────
-function renderIntentCard(data) {
-  hideEmpty();
-  const intent  = (data.intent || 'UNCLEAR').toUpperCase();
-  const meta    = INTENT_META[intent] || INTENT_META.UNCLEAR;
-  const conf    = typeof data.confidence === 'number' ? Math.round(data.confidence * 100) : '—';
-  const isFinal = data.is_final === true;
-  const reply   = data.reply_to_user || '';
-  const query   = data.query || '';
-  const entities = data.entities || {};
-
-  // Build entity chips (skip null / empty values)
-  const entityEntries = Object.entries(entities).filter(([k,v]) => v && v !== 'null');
-  const entityHtml = entityEntries.length
-    ? `<div class="ic-entities">${entityEntries.map(([k,v]) =>
-        `<span class="entity-chip">${escHtml(k)}: ${escHtml(String(v))}</span>`
-      ).join('')}</div>`
-    : '';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'bubble-wrap ai';
-  wrap.innerHTML = `
-    <div class="intent-card">
-      <div class="intent-card-header">
-        <span class="intent-badge ${intent}">
-          <span class="intent-icon">${meta.icon}</span>
-          ${escHtml(meta.label)}
-        </span>
-        <span class="confidence-pill">${conf}% confidence</span>
-      </div>
-      <div class="intent-card-body">
-        ${query ? `
-        <div class="ic-row">
-          <span class="ic-label">Query</span>
-          <span class="ic-value query-val">"${escHtml(query)}"</span>
-        </div>` : ''}
-        <div class="ic-row">
-          <span class="ic-label">Response</span>
-          <span class="ic-value">${escHtml(reply)}</span>
-        </div>
-        ${entityHtml ? `<div class="ic-row">
-          <span class="ic-label">Entities</span>
-          ${entityHtml}
-        </div>` : ''}
-      </div>
-      <div class="intent-card-footer">
-        <span class="final-chip ${isFinal ? 'yes' : 'no'}">${isFinal ? '✓ Final intent' : '⟳ Needs clarification'}</span>
-        <span class="audio-badge">♪ Voice played</span>
-      </div>
-    </div>
-    <div class="bubble-meta" style="margin-top:5px">MyDrive AI · ${new Date().toLocaleTimeString()}</div>
-  `;
-
-  msgContainer.appendChild(wrap);
-  scrollToBottom();
-}
-
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Voice recording ────────────────────────────────────────────────────────────
@@ -612,7 +730,11 @@ function stopRecording() {
 
 async function sendVoice() {
   if (!audioChunks.length || !voiceWs || voiceWs.readyState !== WebSocket.OPEN) return;
-  addBubble('user', '🎙️ Voice message', 'voice');
+
+  // Add placeholder bubble — will be replaced by user_transcript
+  const wrap = addBubble('user', '🎙️ Voice message…', 'voice');
+  lastUserVoiceBubble = wrap;
+
   showThinkingBubble();
 
   const blob      = new Blob(audioChunks, { type: 'audio/webm' });
@@ -643,6 +765,9 @@ function sendText() {
   textInput.value = '';
   autoResize();
   showThinkingBubble();
+  // Reset transcript state for new turn
+  streamingGeminiTranscriptBubble = null;
+  streamingGeminiTranscriptText   = '';
   textWs.send(JSON.stringify({ type: 'message', text }));
   setStatus('processing', 'Thinking…');
 }
@@ -652,6 +777,7 @@ function hideEmpty() {
   if (emptyState) emptyState.style.display = 'none';
 }
 
+// Returns the wrap element so callers can hold a reference
 function addBubble(role, content, inputKind = null) {
   hideEmpty();
   const wrap   = document.createElement('div');
@@ -675,6 +801,7 @@ function addBubble(role, content, inputKind = null) {
 
   msgContainer.appendChild(wrap);
   scrollToBottom();
+  return wrap; // return so callers can reference it
 }
 
 function showThinkingBubble() {
