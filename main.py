@@ -53,7 +53,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_KEY")
-GEMINI_MODEL   = "gemini-2.5-flash-native-audio"
+GEMINI_MODEL   = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 SYSTEM_PROMPT = """
 You are a helpful AI voice assistant for 'MyDrive', an automobile service platform.
