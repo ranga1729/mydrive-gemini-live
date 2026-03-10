@@ -292,7 +292,7 @@ async def _run_one_turn(gemini_session, outbox: asyncio.Queue) -> bool:
 
                 if sc.input_transcription and sc.input_transcription.text:
                     await outbox.put(("user_transcript", sc.input_transcription.text))
-                    print("input_transcription", sc.output_transcription.text)
+                    print("input_transcription", sc.input_transcription.text)
 
                 if sc.turn_complete:
                     await outbox.put(("status", "done"))
