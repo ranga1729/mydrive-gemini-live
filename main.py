@@ -42,7 +42,7 @@ import asyncio
 import json
 import os
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
@@ -172,20 +172,43 @@ TOOL_DECLARATIONS = [
     },
 ]
 
-GEMINI_CONFIG = {
-    "response_modalities": ["AUDIO"],
-    "system_instruction": SYSTEM_PROMPT,
-    "speech_config": {
+
+
+#improved config
+GEMINI_CONFIG = types.LiveConnectConfig(
+    response_modalities=["AUDIO"],
+    system_instruction=SYSTEM_PROMPT,
+    media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW, #low resolution for testing.
+    thinking_config=types.ThinkingConfig( #thinking is unnecessary
+        thinking_budget=0,
+        include_thoughts=False
+    ),
+    output_audio_transcription={},
+    input_audio_transcription={},
+    tools=[{"function_declarations": TOOL_DECLARATIONS}],
+    speech_config= {
         "voice_config": {
             "prebuilt_voice_config": {
                 "voice_name": "AOEDE"
             }
         }
     },
-    "output_audio_transcription": {},
-    "input_audio_transcription":  {},
-    "tools": [{"function_declarations": TOOL_DECLARATIONS}],
-}
+)
+
+# GEMINI_CONFIG = {
+#     "response_modalities": ["AUDIO"],
+#     "system_instruction": SYSTEM_PROMPT,
+#     "speech_config": {
+#         "voice_config": {
+#             "prebuilt_voice_config": {
+#                 "voice_name": "AOEDE"
+#             }
+#         }
+#     },
+#     "output_audio_transcription": {},
+#     "input_audio_transcription":  {},
+#     "tools": [{"function_declarations": TOOL_DECLARATIONS}],
+# }
 
 # ── Tool implementations ───────────────────────────────────────────────────────
 
@@ -265,12 +288,15 @@ async def _run_one_turn(gemini_session, outbox: asyncio.Queue) -> bool:
 
                 if sc.output_transcription and sc.output_transcription.text:
                     await outbox.put(("gemini_transcript", sc.output_transcription.text))
+                    print("gemini_transcript", sc.output_transcription.text)
 
                 if sc.input_transcription and sc.input_transcription.text:
                     await outbox.put(("user_transcript", sc.input_transcription.text))
+                    print("input_transcription", sc.output_transcription.text)
 
                 if sc.turn_complete:
                     await outbox.put(("status", "done"))
+                    print("turn_complete")
                     return True   # ← this turn is finished; outer loop can wait for next send
 
             # ── Tool call — handle inline and keep iterating for confirmation ──
@@ -523,13 +549,15 @@ async def websocket_voice_chat(ws: WebSocket):
 # ── Health check ───────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    host = request.base_url.netloc
+    
     return {
         "status": "ok",
         "model": GEMINI_MODEL,
         "endpoints": {
-            "voice": "ws://<host>/ws/chat",
-            "text":  "ws://<host>/ws/text",
+            "voice": f"ws://{host}/ws/chat",
+            "text":  f"ws://{host}/ws/text",
         },
         "tools": [t["name"] for t in TOOL_DECLARATIONS],
     }
