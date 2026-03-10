@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
 <style>
+  /* ... [Existing Styles Kept for Consistency] ... */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
@@ -41,7 +42,6 @@
     height: 100vh; max-width: 860px; margin: 0 auto; padding: 0 16px;
   }
 
-  /* ── Header ── */
   header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 20px 0 14px; border-bottom: 1px solid var(--border); gap: 12px;
@@ -76,14 +76,16 @@
   .status-pill.error           { color: var(--red); border-color: rgba(255,77,109,.2); }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-  .endpoint-row { display: flex; gap: 8px; align-items: center; }
-  .endpoint-row input {
+  .config-panel { display: flex; flex-direction: column; gap: 6px; }
+  .config-row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+  .config-row label { font-family: var(--font-mono); font-size: 10px; color: var(--muted); text-transform: uppercase; }
+  .config-row input {
     font-family: var(--font-mono); font-size: 11px;
     background: var(--panel); border: 1px solid var(--border);
-    color: var(--muted); padding: 5px 10px; border-radius: 8px;
-    width: 240px; outline: none; transition: border-color .2s, color .2s;
+    color: var(--muted); padding: 4px 10px; border-radius: 8px;
+    width: 160px; outline: none; transition: border-color .2s, color .2s;
   }
-  .endpoint-row input:focus { border-color: var(--accent); color: var(--text); }
+  .config-row input:focus { border-color: var(--accent); color: var(--text); }
 
   /* ── Messages ── */
   .messages {
@@ -114,7 +116,6 @@
     background: var(--ai-bg); border: 1px solid var(--border); border-bottom-left-radius: 4px;
   }
 
-  /* Transcript bubble — slightly subdued */
   .bubble.transcript {
     background: transparent;
     border-color: rgba(255,255,255,.06);
@@ -133,7 +134,6 @@
   }
   .bubble-meta svg { width:10px; height:10px; }
 
-  /* Thinking dots */
   .bubble-wrap.ai .bubble.thinking { display: flex; gap: 5px; align-items: center; padding: 14px 18px; }
   .thinking-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: bounce 1.2s infinite; }
   .thinking-dot:nth-child(2) { animation-delay: .15s; }
@@ -149,7 +149,6 @@
     border: 1px solid var(--border);
   }
 
-  /* Per-tool accent colours */
   .tool-card.request_roadside_assistance { border-color: rgba(255,184,48,.3);  }
   .tool-card.request_tow_truck           { border-color: rgba(255,77,109,.3);  }
   .tool-card.search_spare_parts          { border-color: rgba(108,99,255,.3);  }
@@ -197,7 +196,6 @@
     text-transform: uppercase; letter-spacing: 0.8px;
   }
 
-  /* Args grid */
   .args-grid { display: flex; flex-direction: column; gap: 4px; }
   .arg-row {
     display: flex; align-items: baseline; gap: 8px;
@@ -209,7 +207,6 @@
   }
   .arg-val { color: var(--text); }
 
-  /* Result block */
   .result-block {
     font-family: var(--font-mono); font-size: 11.5px;
     background: var(--panel); border: 1px solid var(--border);
@@ -319,8 +316,15 @@
         </div>
       </div>
     </div>
-    <div class="endpoint-row">
-      <input type="text" id="hostInput" value="localhost:8000" placeholder="host:port"/>
+    <div class="config-panel">
+      <div class="config-row">
+        <label>Host</label>
+        <input type="text" id="hostInput" value="localhost:8000" placeholder="host:port"/>
+      </div>
+      <div class="config-row">
+        <label>Session ID</label>
+        <input type="text" id="sessionIdInput" placeholder="auto-generated"/>
+      </div>
     </div>
   </header>
 
@@ -333,7 +337,7 @@
 
   <div class="input-area">
     <div class="text-row">
-      <textarea id="textInput" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for new line)"></textarea>
+      <textarea id="textInput" rows="1" placeholder="Type a message…"></textarea>
       <button class="btn-send" id="btnSend" title="Send text">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -363,34 +367,55 @@
 </div>
 
 <script>
+// ── Session Handling ──────────────────────────────────────────────────────────
+// Generates a random session ID if one isn't provided, or retrieves from URL
+const getSessionId = () => {
+    const input = document.getElementById('sessionIdInput').value.trim();
+    if (input) return input;
+    
+    // Check URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('session_id')) {
+        const sid = urlParams.get('session_id');
+        document.getElementById('sessionIdInput').value = sid;
+        return sid;
+    }
+
+    // Generate random
+    const randomId = 'session_' + Math.random().toString(36).substr(2, 9);
+    document.getElementById('sessionIdInput').value = randomId;
+    return randomId;
+};
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const getBase  = () => document.getElementById('hostInput').value.trim() || 'localhost:8000';
-const voiceUrl = () => `ws://${getBase()}/ws/chat`;
-const textUrl  = () => `ws://${getBase()}/ws/text`;
+// NEW: URLs now include the session_id as a query parameter
+const voiceUrl = () => `ws://${getBase()}/ws/chat?session_id=${getSessionId()}`;
+const textUrl  = () => `ws://${getBase()}/ws/text?session_id=${getSessionId()}`;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let voiceWs = null, textWs = null;
 let mediaRecorder = null, audioChunks = [], isRecording = false;
 let audioQueue = [], isPlayingAudio = false;
 let thinkingBubble = null;
-// Pending tool card waiting to be rendered after audio finishes
 let pendingToolCard = null;
-// Live streaming transcript bubble references
 let streamingGeminiTranscriptBubble = null;
 let streamingGeminiTranscriptText   = '';
+let lastUserVoiceBubble = null;
 
 // ── Elements ──────────────────────────────────────────────────────────────────
-const msgContainer = document.getElementById('messages');
-const emptyState   = document.getElementById('emptyState');
-const statusPill   = document.getElementById('statusPill');
-const statusText   = document.getElementById('statusText');
-const btnMic       = document.getElementById('btnMic');
-const btnSend      = document.getElementById('btnSend');
-const textInput    = document.getElementById('textInput');
-const waveform     = document.getElementById('waveform');
-const voiceHint    = document.getElementById('voiceHint');
-const speakingBar  = document.getElementById('speakingBar');
-const hostInput    = document.getElementById('hostInput');
+const msgContainer   = document.getElementById('messages');
+const emptyState     = document.getElementById('emptyState');
+const statusPill     = document.getElementById('statusPill');
+const statusText     = document.getElementById('statusText');
+const btnMic         = document.getElementById('btnMic');
+const btnSend        = document.getElementById('btnSend');
+const textInput      = document.getElementById('textInput');
+const waveform       = document.getElementById('waveform');
+const voiceHint      = document.getElementById('voiceHint');
+const speakingBar    = document.getElementById('speakingBar');
+const hostInput      = document.getElementById('hostInput');
+const sessionIdInput = document.getElementById('sessionIdInput');
 
 // ── Tool metadata ─────────────────────────────────────────────────────────────
 const TOOL_META = {
@@ -408,30 +433,34 @@ function setStatus(state, label) {
 
 // ── WebSocket connections ─────────────────────────────────────────────────────
 function connectVoice() {
+  if (voiceWs) voiceWs.close();
   try {
     voiceWs = new WebSocket(voiceUrl());
     voiceWs.binaryType = 'arraybuffer';
     voiceWs.onopen    = () => setStatus('connected', 'Ready');
     voiceWs.onmessage = (e) => handleWsMessage(e, 'voice');
     voiceWs.onerror   = () => setStatus('error', 'Voice socket error');
-    voiceWs.onclose   = () => { setStatus('error', 'Disconnected'); setTimeout(connectVoice, 2500); };
+    voiceWs.onclose   = (e) => { 
+        if (!e.wasClean) setStatus('error', 'Disconnected'); 
+        setTimeout(connectVoice, 3000); 
+    };
   } catch(e) { setStatus('error', 'Cannot connect'); }
 }
 
 function connectText() {
+  if (textWs) textWs.close();
   try {
     textWs = new WebSocket(textUrl());
     textWs.binaryType = 'arraybuffer';
     textWs.onopen    = () => {};
     textWs.onmessage = (e) => handleWsMessage(e, 'text');
     textWs.onerror   = () => {};
-    textWs.onclose   = () => { setTimeout(connectText, 2500); };
+    textWs.onclose   = () => { setTimeout(connectText, 3000); };
   } catch(e) {}
 }
 
 // ── WS message router ─────────────────────────────────────────────────────────
 function handleWsMessage(event, source) {
-  // Binary PCM audio chunk
   if (event.data instanceof ArrayBuffer) {
     audioQueue.push(event.data);
     if (!isPlayingAudio) drainAudioQueue();
@@ -441,28 +470,22 @@ function handleWsMessage(event, source) {
   let msg;
   try { msg = JSON.parse(event.data); } catch { return; }
 
-  // ── Typed frames from the new backend ──────────────────────────────────────
-
-  // Tool call triggered — buffer and render after audio
   if (msg.type === 'tool_call') {
     pendingToolCard = msg;
     return;
   }
 
-  // Gemini spoken-text transcript — stream it into a live bubble
   if (msg.type === 'gemini_transcript') {
     hideThinkingBubble();
     appendGeminiTranscript(msg.text);
     return;
   }
 
-  // User voice input transcript — display as a user bubble update
   if (msg.type === 'user_transcript') {
     updateUserTranscriptBubble(msg.text);
     return;
   }
 
-  // ── Status frames ──────────────────────────────────────────────────────────
   switch (msg.status) {
     case 'ready':
       setStatus('connected', 'Ready');
@@ -471,16 +494,13 @@ function handleWsMessage(event, source) {
     case 'processing':
       setStatus('processing', 'Thinking…');
       showThinkingBubble();
-      // Reset streaming transcript for the new turn
       streamingGeminiTranscriptBubble = null;
       streamingGeminiTranscriptText   = '';
       break;
 
     case 'done':
       hideThinkingBubble();
-      // Finalise the streaming transcript bubble (lock it in)
       finaliseGeminiTranscript();
-      // Render tool card after audio drains; or now if no audio is pending
       if (!isPlayingAudio && audioQueue.length === 0 && pendingToolCard) {
         renderToolCard(pendingToolCard);
         pendingToolCard = null;
@@ -505,21 +525,15 @@ function handleWsMessage(event, source) {
 }
 
 // ── Transcript streaming helpers ──────────────────────────────────────────────
-// Gemini transcripts arrive as incremental text chunks while audio plays.
-// We stream them into a single bubble so it feels live.
-
 function appendGeminiTranscript(chunk) {
   if (!chunk) return;
   hideEmpty();
 
   if (!streamingGeminiTranscriptBubble) {
-    // Create the transcript bubble the first time
     const wrap   = document.createElement('div');
     wrap.className = 'bubble-wrap ai';
-
     const bubble = document.createElement('div');
     bubble.className = 'bubble transcript';
-
     const meta = document.createElement('div');
     meta.className = 'bubble-meta';
     meta.innerHTML = `
@@ -532,7 +546,6 @@ function appendGeminiTranscript(chunk) {
     wrap.appendChild(bubble);
     wrap.appendChild(meta);
     msgContainer.appendChild(wrap);
-
     streamingGeminiTranscriptBubble = bubble;
     streamingGeminiTranscriptText   = '';
   }
@@ -543,25 +556,17 @@ function appendGeminiTranscript(chunk) {
 }
 
 function finaliseGeminiTranscript() {
-  // Nothing to do structurally — bubble is already in DOM.
-  // Just null out the reference so the next turn starts fresh.
   streamingGeminiTranscriptBubble = null;
   streamingGeminiTranscriptText   = '';
 }
 
-// For voice input: the first bubble shows "🎙️ Voice message";
-// when we get the user_transcript we update it with the actual words.
-let lastUserVoiceBubble = null;
-
 function updateUserTranscriptBubble(text) {
   if (!text) return;
   if (lastUserVoiceBubble) {
-    // Replace the placeholder text with the real transcription
     const bubble = lastUserVoiceBubble.querySelector('.bubble');
     if (bubble) bubble.textContent = `🎙️ "${text}"`;
-    lastUserVoiceBubble = null; // consumed
+    lastUserVoiceBubble = null;
   } else {
-    // Fallback: render as a fresh user bubble (e.g. transcript arrives late)
     addBubble('user', `🎙️ "${text}"`, 'voice');
   }
 }
@@ -574,7 +579,6 @@ function renderToolCard(data) {
   const result   = data.result || {};
   const meta     = TOOL_META[toolName] || { icon: '⚙️', label: toolName };
 
-  // Build arguments rows
   const argsHtml = Object.entries(args).length
     ? Object.entries(args).map(([k, v]) =>
         `<div class="arg-row">
@@ -584,7 +588,6 @@ function renderToolCard(data) {
       ).join('')
     : '<span style="color:var(--muted);font-size:12px">none</span>';
 
-  // Colour-code known result fields
   const resultHtml = Object.entries(result).map(([k, v]) => {
     let cls = '';
     if (k === 'status')       cls = 'ok';
@@ -628,9 +631,7 @@ function renderToolCard(data) {
 }
 
 function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Audio playback ────────────────────────────────────────────────────────────
@@ -677,7 +678,7 @@ async function drainAudioQueue() {
         source.onended = resolve;
         source.start();
       });
-    } catch(e) { /* skip malformed chunk */ }
+    } catch(e) {}
     await new Promise(r => setTimeout(r, 5));
   }
 
@@ -686,7 +687,6 @@ async function drainAudioQueue() {
   speakingBar.classList.remove('active');
   setStatus('connected', 'Ready');
 
-  // Render the buffered tool card now that audio is done
   if (pendingToolCard) {
     renderToolCard(pendingToolCard);
     pendingToolCard = null;
@@ -712,7 +712,7 @@ async function startRecording() {
     voiceHint.textContent = 'Recording… release to send';
     setStatus('listening', 'Listening…');
   } catch(e) {
-    addBubble('ai', '⚠️ Microphone access denied. Please allow mic permissions.');
+    addBubble('ai', '⚠️ Microphone access denied.');
   }
 }
 
@@ -730,11 +730,8 @@ function stopRecording() {
 
 async function sendVoice() {
   if (!audioChunks.length || !voiceWs || voiceWs.readyState !== WebSocket.OPEN) return;
-
-  // Add placeholder bubble — will be replaced by user_transcript
   const wrap = addBubble('user', '🎙️ Voice message…', 'voice');
   lastUserVoiceBubble = wrap;
-
   showThinkingBubble();
 
   const blob      = new Blob(audioChunks, { type: 'audio/webm' });
@@ -758,14 +755,13 @@ function sendText() {
   const text = textInput.value.trim();
   if (!text) return;
   if (!textWs || textWs.readyState !== WebSocket.OPEN) {
-    addBubble('ai', '⚠️ Text channel not connected. Check your host and refresh.');
+    addBubble('ai', '⚠️ Text channel not connected.');
     return;
   }
   addBubble('user', text, 'text');
   textInput.value = '';
   autoResize();
   showThinkingBubble();
-  // Reset transcript state for new turn
   streamingGeminiTranscriptBubble = null;
   streamingGeminiTranscriptText   = '';
   textWs.send(JSON.stringify({ type: 'message', text }));
@@ -777,12 +773,10 @@ function hideEmpty() {
   if (emptyState) emptyState.style.display = 'none';
 }
 
-// Returns the wrap element so callers can hold a reference
 function addBubble(role, content, inputKind = null) {
   hideEmpty();
   const wrap   = document.createElement('div');
   wrap.className = `bubble-wrap ${role}`;
-
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = content;
@@ -793,15 +787,14 @@ function addBubble(role, content, inputKind = null) {
     meta.className = 'bubble-meta';
     if (inputKind === 'voice') {
       meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Voice`;
-    } else if (inputKind === 'text') {
+    } else {
       meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Text`;
     }
     wrap.appendChild(meta);
   }
-
   msgContainer.appendChild(wrap);
   scrollToBottom();
-  return wrap; // return so callers can reference it
+  return wrap;
 }
 
 function showThinkingBubble() {
@@ -820,7 +813,6 @@ function hideThinkingBubble() {
 
 function scrollToBottom() { msgContainer.scrollTop = msgContainer.scrollHeight; }
 
-// ── Textarea auto-resize ───────────────────────────────────────────────────────
 function autoResize() {
   textInput.style.height = 'auto';
   textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
@@ -830,7 +822,6 @@ textInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
 });
 
-// ── Mic events ────────────────────────────────────────────────────────────────
 btnMic.addEventListener('mousedown',  startRecording);
 btnMic.addEventListener('mouseup',    stopRecording);
 btnMic.addEventListener('mouseleave', () => { if (isRecording) stopRecording(); });
@@ -838,16 +829,18 @@ btnMic.addEventListener('touchstart', (e) => { e.preventDefault(); startRecordin
 btnMic.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording(); });
 btnSend.addEventListener('click', sendText);
 
-// ── Reconnect on host change ──────────────────────────────────────────────────
-hostInput.addEventListener('change', () => {
-  if (voiceWs) { voiceWs.onclose = null; voiceWs.close(); }
-  if (textWs)  { textWs.onclose  = null; textWs.close();  }
-  setStatus('', 'Connecting…');
-  connectVoice(); connectText();
+// NEW: Connect/Reconnect when Host or Session ID changes
+[hostInput, sessionIdInput].forEach(el => {
+    el.addEventListener('change', () => {
+        setStatus('', 'Connecting…');
+        connectVoice(); 
+        connectText();
+    });
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-setStatus('', 'Connecting…');
+// Generates ID on load
+getSessionId(); 
 connectVoice();
 connectText();
 </script>
