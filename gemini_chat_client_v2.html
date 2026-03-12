@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MyDrive Assistant</title>
+<title>MyDrive Assistant (Unified)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
 <style>
-  /* ... [Existing Styles Kept for Consistency] ... */
+  /* Same base styles as before – kept for consistency */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
@@ -87,7 +87,20 @@
   }
   .config-row input:focus { border-color: var(--accent); color: var(--text); }
 
-  /* ── Messages ── */
+  /* Speaker toggle */
+  .speaker-toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 11px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 20px; padding: 2px 8px; cursor: pointer;
+    transition: all .2s;
+  }
+  .speaker-toggle.active { border-color: var(--accent); background: rgba(108,99,255,.1); }
+  .speaker-toggle .icon { font-size: 14px; }
+  .speaker-toggle .state { color: var(--muted); }
+  .speaker-toggle.active .state { color: var(--accent); }
+
+  /* Messages */
   .messages {
     overflow-y: auto; padding: 20px 0;
     display: flex; flex-direction: column; gap: 12px;
@@ -140,7 +153,7 @@
   .thinking-dot:nth-child(3) { animation-delay: .3s; }
   @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
 
-  /* ── Tool Call Card ── */
+  /* Tool Call Card (unchanged) */
   .tool-card {
     width: min(540px, 92vw);
     border-radius: var(--radius);
@@ -148,12 +161,10 @@
     overflow: hidden;
     border: 1px solid var(--border);
   }
-
   .tool-card.request_roadside_assistance { border-color: rgba(255,184,48,.3);  }
   .tool-card.request_tow_truck           { border-color: rgba(255,77,109,.3);  }
   .tool-card.search_spare_parts          { border-color: rgba(108,99,255,.3);  }
   .tool-card.book_garage_service         { border-color: rgba(0,229,160,.3);   }
-
   .tool-card-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 14px 9px;
@@ -163,7 +174,6 @@
   .tool-card.request_tow_truck           .tool-card-header { background: rgba(255,77,109,.06); }
   .tool-card.search_spare_parts          .tool-card-header { background: rgba(108,99,255,.06); }
   .tool-card.book_garage_service         .tool-card-header { background: rgba(0,229,160,.06);  }
-
   .tool-badge {
     display: inline-flex; align-items: center; gap: 7px;
     font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
@@ -173,7 +183,6 @@
   .tool-card.request_tow_truck           .tool-badge { background: rgba(255,77,109,.12); color: var(--red);    border: 1px solid rgba(255,77,109,.25); }
   .tool-card.search_spare_parts          .tool-badge { background: rgba(108,99,255,.12); color: var(--accent); border: 1px solid rgba(108,99,255,.25); }
   .tool-card.book_garage_service         .tool-badge { background: rgba(0,229,160,.12);  color: var(--green);  border: 1px solid rgba(0,229,160,.25);  }
-
   .triggered-chip {
     font-family: var(--font-mono); font-size: 10px;
     padding: 2px 9px; border-radius: 20px;
@@ -187,15 +196,12 @@
     background: var(--green); box-shadow: 0 0 5px var(--green);
     animation: blink .8s infinite;
   }
-
   .tool-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: var(--ai-bg); }
-
   .tc-section { display: flex; flex-direction: column; gap: 5px; }
   .tc-label {
     font-family: var(--font-mono); font-size: 9.5px; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.8px;
   }
-
   .args-grid { display: flex; flex-direction: column; gap: 4px; }
   .arg-row {
     display: flex; align-items: baseline; gap: 8px;
@@ -206,7 +212,6 @@
     color: var(--muted); flex-shrink: 0; min-width: 110px;
   }
   .arg-val { color: var(--text); }
-
   .result-block {
     font-family: var(--font-mono); font-size: 11.5px;
     background: var(--panel); border: 1px solid var(--border);
@@ -220,7 +225,7 @@
   .result-val.eta    { color: var(--amber); }
   .result-val.accent { color: var(--accent); }
 
-  /* ── Input area ── */
+  /* Input area */
   .input-area {
     border-top: 1px solid var(--border); padding: 14px 0 18px;
     display: flex; flex-direction: column; gap: 12px;
@@ -325,6 +330,12 @@
         <label>Session ID</label>
         <input type="text" id="sessionIdInput" placeholder="auto-generated"/>
       </div>
+      <div class="config-row">
+        <div class="speaker-toggle" id="speakerToggle">
+          <span class="icon">🔊</span>
+          <span class="state" id="speakerState">off</span>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -367,43 +378,30 @@
 </div>
 
 <script>
-// ── Session Handling ──────────────────────────────────────────────────────────
-// Generates a random session ID if one isn't provided, or retrieves from URL
-const getSessionId = () => {
-    const input = document.getElementById('sessionIdInput').value.trim();
-    if (input) return input;
-    
-    // Check URL params
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('session_id')) {
-        const sid = urlParams.get('session_id');
-        document.getElementById('sessionIdInput').value = sid;
-        return sid;
-    }
+// --- Unified WebSocket client for MyDrive API v2 ---
 
-    // Generate random
-    const randomId = 'session_' + Math.random().toString(36).substr(2, 9);
-    document.getElementById('sessionIdInput').value = randomId;
-    return randomId;
-};
+// Helper: get session ID from input or generate
+function getSessionId() {
+  const input = document.getElementById('sessionIdInput').value.trim();
+  if (input) return input;
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('session_id')) {
+    const sid = urlParams.get('session_id');
+    document.getElementById('sessionIdInput').value = sid;
+    return sid;
+  }
+  const newId = 'session_' + Math.random().toString(36).substr(2, 9);
+  document.getElementById('sessionIdInput').value = newId;
+  return newId;
+}
 
-// ── Config ────────────────────────────────────────────────────────────────────
-const getBase  = () => document.getElementById('hostInput').value.trim() || 'localhost:8000';
-// NEW: URLs now include the session_id as a query parameter
-const voiceUrl = () => `ws://${getBase()}/ws/chat?session_id=${getSessionId()}`;
-const textUrl  = () => `ws://${getBase()}/ws/text?session_id=${getSessionId()}`;
+// Build WebSocket URL
+function wsUrl() {
+  const host = document.getElementById('hostInput').value.trim() || 'localhost:8000';
+  return `ws://${host}/ws/chat?session_id=${getSessionId()}`;
+}
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let voiceWs = null, textWs = null;
-let mediaRecorder = null, audioChunks = [], isRecording = false;
-let audioQueue = [], isPlayingAudio = false;
-let thinkingBubble = null;
-let pendingToolCard = null;
-let streamingGeminiTranscriptBubble = null;
-let streamingGeminiTranscriptText   = '';
-let lastUserVoiceBubble = null;
-
-// ── Elements ──────────────────────────────────────────────────────────────────
+// DOM elements
 const msgContainer   = document.getElementById('messages');
 const emptyState     = document.getElementById('emptyState');
 const statusPill     = document.getElementById('statusPill');
@@ -414,10 +412,12 @@ const textInput      = document.getElementById('textInput');
 const waveform       = document.getElementById('waveform');
 const voiceHint      = document.getElementById('voiceHint');
 const speakingBar    = document.getElementById('speakingBar');
+const speakerToggle  = document.getElementById('speakerToggle');
+const speakerState   = document.getElementById('speakerState');
 const hostInput      = document.getElementById('hostInput');
 const sessionIdInput = document.getElementById('sessionIdInput');
 
-// ── Tool metadata ─────────────────────────────────────────────────────────────
+// Tool metadata for cards (unchanged)
 const TOOL_META = {
   request_roadside_assistance: { icon: '🔧', label: 'Roadside Assistance' },
   request_tow_truck:           { icon: '🚛', label: 'Tow Truck'           },
@@ -425,153 +425,74 @@ const TOOL_META = {
   book_garage_service:         { icon: '🏪', label: 'Garage Booking'      },
 };
 
-// ── Status UI ─────────────────────────────────────────────────────────────────
+// State
+let ws = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let audioQueue = [];
+let isPlayingAudio = false;
+let thinkingBubble = null;
+let pendingToolCall = null;
+let currentSpeakerMode = false; // will be updated from server
+let reconnectTimer = null;
+
+// --- UI Helpers ---
 function setStatus(state, label) {
   statusPill.className = 'status-pill ' + state;
   statusText.textContent = label;
 }
 
-// ── WebSocket connections ─────────────────────────────────────────────────────
-function connectVoice() {
-  if (voiceWs) voiceWs.close();
-  try {
-    voiceWs = new WebSocket(voiceUrl());
-    voiceWs.binaryType = 'arraybuffer';
-    voiceWs.onopen    = () => setStatus('connected', 'Ready');
-    voiceWs.onmessage = (e) => handleWsMessage(e, 'voice');
-    voiceWs.onerror   = () => setStatus('error', 'Voice socket error');
-    voiceWs.onclose   = (e) => { 
-        if (!e.wasClean) setStatus('error', 'Disconnected'); 
-        setTimeout(connectVoice, 3000); 
-    };
-  } catch(e) { setStatus('error', 'Cannot connect'); }
+function hideEmpty() {
+  if (emptyState) emptyState.style.display = 'none';
 }
 
-function connectText() {
-  if (textWs) textWs.close();
-  try {
-    textWs = new WebSocket(textUrl());
-    textWs.binaryType = 'arraybuffer';
-    textWs.onopen    = () => {};
-    textWs.onmessage = (e) => handleWsMessage(e, 'text');
-    textWs.onerror   = () => {};
-    textWs.onclose   = () => { setTimeout(connectText, 3000); };
-  } catch(e) {}
+function scrollToBottom() {
+  msgContainer.scrollTop = msgContainer.scrollHeight;
 }
 
-// ── WS message router ─────────────────────────────────────────────────────────
-function handleWsMessage(event, source) {
-  if (event.data instanceof ArrayBuffer) {
-    audioQueue.push(event.data);
-    if (!isPlayingAudio) drainAudioQueue();
-    return;
-  }
-
-  let msg;
-  try { msg = JSON.parse(event.data); } catch { return; }
-
-  if (msg.type === 'tool_call') {
-    pendingToolCard = msg;
-    return;
-  }
-
-  if (msg.type === 'gemini_transcript') {
-    hideThinkingBubble();
-    appendGeminiTranscript(msg.text);
-    return;
-  }
-
-  if (msg.type === 'user_transcript') {
-    updateUserTranscriptBubble(msg.text);
-    return;
-  }
-
-  switch (msg.status) {
-    case 'ready':
-      setStatus('connected', 'Ready');
-      break;
-
-    case 'processing':
-      setStatus('processing', 'Thinking…');
-      showThinkingBubble();
-      streamingGeminiTranscriptBubble = null;
-      streamingGeminiTranscriptText   = '';
-      break;
-
-    case 'done':
-      hideThinkingBubble();
-      finaliseGeminiTranscript();
-      if (!isPlayingAudio && audioQueue.length === 0 && pendingToolCard) {
-        renderToolCard(pendingToolCard);
-        pendingToolCard = null;
-        setStatus('connected', 'Ready');
-      }
-      break;
-
-    case 'interrupted':
-      audioQueue      = [];
-      pendingToolCard = null;
-      streamingGeminiTranscriptBubble = null;
-      streamingGeminiTranscriptText   = '';
-      setStatus('connected', 'Ready');
-      break;
-
-    case 'error':
-      hideThinkingBubble();
-      setStatus('error', 'Error');
-      addBubble('ai', `❌ ${msg.message || 'Unknown error'}`);
-      break;
-  }
-}
-
-// ── Transcript streaming helpers ──────────────────────────────────────────────
-function appendGeminiTranscript(chunk) {
-  if (!chunk) return;
+function addBubble(role, content, inputKind = null) {
   hideEmpty();
+  const wrap = document.createElement('div');
+  wrap.className = `bubble-wrap ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = content;
+  wrap.appendChild(bubble);
 
-  if (!streamingGeminiTranscriptBubble) {
-    const wrap   = document.createElement('div');
-    wrap.className = 'bubble-wrap ai';
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble transcript';
+  if (role === 'user') {
     const meta = document.createElement('div');
     meta.className = 'bubble-meta';
-    meta.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-      </svg>
-      MyDrive AI · <span class="ts-time">${new Date().toLocaleTimeString()}</span>`;
-
-    wrap.appendChild(bubble);
+    if (inputKind === 'voice') {
+      meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Voice`;
+    } else {
+      meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Text`;
+    }
     wrap.appendChild(meta);
-    msgContainer.appendChild(wrap);
-    streamingGeminiTranscriptBubble = bubble;
-    streamingGeminiTranscriptText   = '';
   }
+  msgContainer.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
 
-  streamingGeminiTranscriptText += chunk;
-  streamingGeminiTranscriptBubble.textContent = streamingGeminiTranscriptText;
+function showThinkingBubble() {
+  if (thinkingBubble) return;
+  hideEmpty();
+  thinkingBubble = document.createElement('div');
+  thinkingBubble.className = 'bubble-wrap ai';
+  thinkingBubble.innerHTML = `<div class="bubble thinking"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>`;
+  msgContainer.appendChild(thinkingBubble);
   scrollToBottom();
 }
 
-function finaliseGeminiTranscript() {
-  streamingGeminiTranscriptBubble = null;
-  streamingGeminiTranscriptText   = '';
-}
-
-function updateUserTranscriptBubble(text) {
-  if (!text) return;
-  if (lastUserVoiceBubble) {
-    const bubble = lastUserVoiceBubble.querySelector('.bubble');
-    if (bubble) bubble.textContent = `🎙️ "${text}"`;
-    lastUserVoiceBubble = null;
-  } else {
-    addBubble('user', `🎙️ "${text}"`, 'voice');
+function hideThinkingBubble() {
+  if (thinkingBubble) {
+    thinkingBubble.remove();
+    thinkingBubble = null;
   }
 }
 
-// ── Tool card renderer ────────────────────────────────────────────────────────
+// --- Tool card render (unchanged from previous) ---
 function renderToolCard(data) {
   hideEmpty();
   const toolName = data.tool || 'unknown';
@@ -625,7 +546,6 @@ function renderToolCard(data) {
       MyDrive AI · ${new Date().toLocaleTimeString()}
     </div>
   `;
-
   msgContainer.appendChild(wrap);
   scrollToBottom();
 }
@@ -634,7 +554,7 @@ function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Audio playback ────────────────────────────────────────────────────────────
+// --- Audio playback (same as before) ---
 function pcmToWav(pcmBuffer, sampleRate = 24000) {
   const numChannels = 1, bitsPerSample = 16;
   const byteRate   = sampleRate * numChannels * bitsPerSample / 8;
@@ -678,7 +598,7 @@ async function drainAudioQueue() {
         source.onended = resolve;
         source.start();
       });
-    } catch(e) {}
+    } catch(e) { console.warn('Audio play error', e); }
     await new Promise(r => setTimeout(r, 5));
   }
 
@@ -687,13 +607,170 @@ async function drainAudioQueue() {
   speakingBar.classList.remove('active');
   setStatus('connected', 'Ready');
 
-  if (pendingToolCard) {
-    renderToolCard(pendingToolCard);
-    pendingToolCard = null;
+  // If we had a pending tool call, show it now
+  if (pendingToolCall) {
+    renderToolCard(pendingToolCall);
+    pendingToolCall = null;
   }
 }
 
-// ── Voice recording ────────────────────────────────────────────────────────────
+// --- WebSocket message handling ---
+function handleIncomingMessage(event) {
+  if (event.data instanceof ArrayBuffer) {
+    // Binary PCM audio
+    audioQueue.push(event.data);
+    if (!isPlayingAudio) drainAudioQueue();
+    return;
+  }
+
+  // Text JSON
+  let msg;
+  try {
+    msg = JSON.parse(event.data);
+  } catch (e) {
+    console.warn('Invalid JSON', e);
+    return;
+  }
+
+  switch (msg.type) {
+    case 'session_ready':
+      setStatus('connected', 'Ready');
+      currentSpeakerMode = msg.speaker_mode || false;
+      updateSpeakerUI();
+      break;
+
+    case 'user_transcript':
+      // Show voice transcript as a user bubble
+      addBubble('user', `🎙️ "${msg.text}"`, 'voice');
+      break;
+
+    case 'assistant_text':
+      hideThinkingBubble();
+      addBubble('ai', msg.text);
+      break;
+
+    case 'tool_call':
+      // Store until after audio finishes, or show immediately if no audio
+      pendingToolCall = msg;
+      if (!isPlayingAudio && audioQueue.length === 0) {
+        renderToolCard(pendingToolCall);
+        pendingToolCall = null;
+      }
+      break;
+
+    case 'turn_complete':
+      // Optionally update status, but we already manage via audio queue
+      break;
+
+    case 'speaker_mode_updated':
+      currentSpeakerMode = msg.enabled;
+      updateSpeakerUI();
+      break;
+
+    case 'error':
+      setStatus('error', 'Error');
+      addBubble('ai', `❌ ${msg.message || 'Unknown error'}`);
+      break;
+
+    case 'session_ended':
+      setStatus('error', 'Session ended');
+      ws.close();
+      break;
+
+    default:
+      console.log('Unknown message type:', msg.type);
+  }
+}
+
+// --- WebSocket connection ---
+function connectWebSocket() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+
+  try {
+    ws = new WebSocket(wsUrl());
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      setStatus('connected', 'Connected, waiting for session...');
+    };
+
+    ws.onmessage = handleIncomingMessage;
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error', err);
+      setStatus('error', 'Connection error');
+    };
+
+    ws.onclose = (e) => {
+      if (!e.wasClean) {
+        setStatus('error', 'Disconnected');
+        // Attempt reconnect after a delay
+        reconnectTimer = setTimeout(() => {
+          connectWebSocket();
+        }, 3000);
+      }
+    };
+  } catch (e) {
+    setStatus('error', 'Cannot connect');
+    reconnectTimer = setTimeout(connectWebSocket, 3000);
+  }
+}
+
+// --- Send JSON helper ---
+function sendJson(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  } else {
+    addBubble('ai', '⚠️ Not connected to server.');
+  }
+}
+
+// --- Speaker toggle ---
+function updateSpeakerUI() {
+  speakerState.textContent = currentSpeakerMode ? 'on' : 'off';
+  if (currentSpeakerMode) {
+    speakerToggle.classList.add('active');
+  } else {
+    speakerToggle.classList.remove('active');
+  }
+}
+
+speakerToggle.addEventListener('click', () => {
+  const newMode = !currentSpeakerMode;
+  sendJson({ type: 'set_speaker', enabled: newMode });
+  // Optimistic update; server will confirm with speaker_mode_updated
+  currentSpeakerMode = newMode;
+  updateSpeakerUI();
+});
+
+// --- Text sending ---
+function sendText() {
+  const text = textInput.value.trim();
+  if (!text) return;
+  addBubble('user', text, 'text');
+  textInput.value = '';
+  autoResize();
+  showThinkingBubble();
+  sendJson({ type: 'text_input', text });
+  setStatus('processing', 'Thinking…');
+}
+
+textInput.addEventListener('input', autoResize);
+textInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendText();
+  }
+});
+btnSend.addEventListener('click', sendText);
+
+function autoResize() {
+  textInput.style.height = 'auto';
+  textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
+}
+
+// --- Voice recording (MediaRecorder + PCM conversion) ---
 async function startRecording() {
   if (isRecording) return;
   try {
@@ -703,7 +780,7 @@ async function startRecording() {
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     audioChunks = [];
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = sendVoice;
+    mediaRecorder.onstop = sendVoicePCM;
     mediaRecorder.start(100);
     isRecording = true;
     btnMic.classList.add('recording');
@@ -711,7 +788,10 @@ async function startRecording() {
     voiceHint.classList.add('recording');
     voiceHint.textContent = 'Recording… release to send';
     setStatus('listening', 'Listening…');
-  } catch(e) {
+
+    // Send voice_start
+    sendJson({ type: 'voice_start' });
+  } catch (e) {
     addBubble('ai', '⚠️ Microphone access denied.');
   }
 }
@@ -728,16 +808,22 @@ function stopRecording() {
   setStatus('processing', 'Processing…');
 }
 
-async function sendVoice() {
-  if (!audioChunks.length || !voiceWs || voiceWs.readyState !== WebSocket.OPEN) return;
-  const wrap = addBubble('user', '🎙️ Voice message…', 'voice');
-  lastUserVoiceBubble = wrap;
+async function sendVoicePCM() {
+  if (!audioChunks.length || !ws || ws.readyState !== WebSocket.OPEN) {
+    // Still send voice_end to avoid hanging state
+    sendJson({ type: 'voice_end' });
+    return;
+  }
+
+  // Show a placeholder voice bubble
+  const voiceWrap = addBubble('user', '🎙️ Voice message…', 'voice');
   showThinkingBubble();
 
-  const blob      = new Blob(audioChunks, { type: 'audio/webm' });
-  const arrayBuf  = await blob.arrayBuffer();
-  const audioCtx  = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-  const decoded   = await audioCtx.decodeAudioData(arrayBuf);
+  // Convert webm to PCM (16kHz mono int16)
+  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+  const arrayBuf = await blob.arrayBuffer();
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const decoded = await audioCtx.decodeAudioData(arrayBuf);
   await audioCtx.close();
 
   const floatData = decoded.getChannelData(0);
@@ -746,103 +832,47 @@ async function sendVoice() {
     int16Data[i] = Math.max(-32768, Math.min(32767, Math.round(floatData[i] * 32767)));
   }
 
-  voiceWs.send(int16Data.buffer);
-  voiceWs.send('END_OF_SPEECH');
+  // Send binary PCM (still in voice_active state)
+  ws.send(int16Data.buffer);
+  // Then signal end of voice
+  sendJson({ type: 'voice_end' });
 }
 
-// ── Text sending ──────────────────────────────────────────────────────────────
-function sendText() {
-  const text = textInput.value.trim();
-  if (!text) return;
-  if (!textWs || textWs.readyState !== WebSocket.OPEN) {
-    addBubble('ai', '⚠️ Text channel not connected.');
-    return;
+// --- Interrupt (clear audio buffer) ---
+function sendInterrupt() {
+  sendJson({ type: 'interrupt' });
+  audioQueue = []; // discard any pending audio
+  if (isPlayingAudio) {
+    // Force stop? We'll just clear queue and let it finish current.
   }
-  addBubble('user', text, 'text');
-  textInput.value = '';
-  autoResize();
-  showThinkingBubble();
-  streamingGeminiTranscriptBubble = null;
-  streamingGeminiTranscriptText   = '';
-  textWs.send(JSON.stringify({ type: 'message', text }));
-  setStatus('processing', 'Thinking…');
+  setStatus('connected', 'Ready');
 }
 
-// ── Bubble helpers ─────────────────────────────────────────────────────────────
-function hideEmpty() {
-  if (emptyState) emptyState.style.display = 'none';
-}
-
-function addBubble(role, content, inputKind = null) {
-  hideEmpty();
-  const wrap   = document.createElement('div');
-  wrap.className = `bubble-wrap ${role}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.textContent = content;
-  wrap.appendChild(bubble);
-
-  if (role === 'user') {
-    const meta = document.createElement('div');
-    meta.className = 'bubble-meta';
-    if (inputKind === 'voice') {
-      meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Voice`;
-    } else {
-      meta.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Text`;
-    }
-    wrap.appendChild(meta);
-  }
-  msgContainer.appendChild(wrap);
-  scrollToBottom();
-  return wrap;
-}
-
-function showThinkingBubble() {
-  if (thinkingBubble) return;
-  hideEmpty();
-  thinkingBubble = document.createElement('div');
-  thinkingBubble.className = 'bubble-wrap ai';
-  thinkingBubble.innerHTML = `<div class="bubble thinking"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>`;
-  msgContainer.appendChild(thinkingBubble);
-  scrollToBottom();
-}
-
-function hideThinkingBubble() {
-  if (thinkingBubble) { thinkingBubble.remove(); thinkingBubble = null; }
-}
-
-function scrollToBottom() { msgContainer.scrollTop = msgContainer.scrollHeight; }
-
-function autoResize() {
-  textInput.style.height = 'auto';
-  textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
-}
-textInput.addEventListener('input', autoResize);
-textInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
-});
-
-btnMic.addEventListener('mousedown',  startRecording);
-btnMic.addEventListener('mouseup',    stopRecording);
+// --- Event listeners for mic ---
+btnMic.addEventListener('mousedown', startRecording);
+btnMic.addEventListener('mouseup', stopRecording);
 btnMic.addEventListener('mouseleave', () => { if (isRecording) stopRecording(); });
 btnMic.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
-btnMic.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording(); });
-btnSend.addEventListener('click', sendText);
+btnMic.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
 
-// NEW: Connect/Reconnect when Host or Session ID changes
+// --- Reconnect when host/session changes ---
 [hostInput, sessionIdInput].forEach(el => {
-    el.addEventListener('change', () => {
-        setStatus('', 'Connecting…');
-        connectVoice(); 
-        connectText();
-    });
+  el.addEventListener('change', () => {
+    if (ws) ws.close();
+    connectWebSocket();
+  });
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-// Generates ID on load
-getSessionId(); 
-connectVoice();
-connectText();
+// Optional: send interrupt on escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    sendInterrupt();
+  }
+});
+
+// --- Initialise ---
+getSessionId(); // ensures input field is set
+connectWebSocket();
 </script>
 </body>
 </html>
