@@ -597,6 +597,11 @@ class SessionManager:
     async def active_session_count(self) -> int:
         async with self._lock:
             return len(self._sessions)
+        
+    async def get_active_session_ids(self) -> list[str]:
+        """Return a list of all active session IDs (thread-safe)."""
+        async with self._lock:
+            return list(self._sessions.keys())
 
     # ── Internal ──────────────────────────────────────────────
 
@@ -892,4 +897,5 @@ async def health(manager: SessionManager = Depends(_get_manager)) -> dict:
         "status":          "ok",
         "model":           GEMINI_MODEL,
         "active_sessions": await manager.active_session_count(),
+        "session_ids":     await manager.get_active_session_ids(),
     }
