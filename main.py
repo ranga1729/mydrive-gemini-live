@@ -292,8 +292,7 @@ GEMINI_CONFIG = types.LiveConnectConfig(
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="AOEDE")
-        ),
-        language_code="en-us" #langauge identification help
+        )
     ),
     realtime_input_config=types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)
