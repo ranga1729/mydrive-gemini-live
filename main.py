@@ -305,7 +305,6 @@ _OUTBOX_STOP = object()
 class SessionState:
     """
     All mutable state for one chat session.
-
     speaker_mode is guarded by _lock because it is written by the receive_loop
     (via the inbox → runner path) and read inside _process_gemini_turn — both
     run concurrently in the same event-loop thread.  An asyncio.Lock is enough.
@@ -536,8 +535,8 @@ async def _handle_tool_call(gsession: Any, state: SessionState, tool_call: Any) 
 
 class SessionManager:
     """
+    Singleton.
     Registry for all active SessionState objects.
-
     All mutations to _sessions are serialised through _lock (asyncio.Lock).
     """
 
@@ -547,7 +546,7 @@ class SessionManager:
         self._lock:     asyncio.Lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task | None = None
 
-    # ── App lifecycle ─────────────────────────────────────────
+    # ── Relevant to App lifecycle ─────────────────────────────────────────
 
     async def start(self) -> None:
         self._cleanup_task = asyncio.create_task(
@@ -570,8 +569,9 @@ class SessionManager:
             await self._terminate(sid)
         log.info("SessionManager stopped")
 
-    # ── Public API ────────────────────────────────────────────
+    # ── Relevant to Public API ────────────────────────────────────────────
 
+    # looks up or create a SesstionState for a session_id
     async def get_or_create(self, session_id: str) -> SessionState:
         async with self._lock:
             state = self._sessions.get(session_id)
@@ -594,16 +594,18 @@ class SessionManager:
         log.info("[%s] new session created", session_id)
         return state
 
+    # return the number of active sessions
     async def active_session_count(self) -> int:
         async with self._lock:
             return len(self._sessions)
         
+    # return the list of active session_ids
     async def get_active_session_ids(self) -> list[str]:
         """Return a list of all active session IDs (thread-safe)."""
         async with self._lock:
             return list(self._sessions.keys())
 
-    # ── Internal ──────────────────────────────────────────────
+    # ── Internal functions/helper functions ──────────────────────────────────────────────
 
     async def _on_runner_done(self, session_id: str) -> None:
         async with self._lock:
@@ -627,6 +629,7 @@ class SessionManager:
                 pass
         log.info("[%s] session terminated", session_id)
 
+    # Terminate sessions idle beyond SESSION_IDLE_TTL
     async def _cleanup_loop(self) -> None:
         while True:
             await asyncio.sleep(CLEANUP_INTERVAL)
