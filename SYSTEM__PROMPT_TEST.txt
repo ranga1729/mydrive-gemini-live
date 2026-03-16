@@ -115,4 +115,11 @@ You have access to four tools. Understand their purpose.
 
 *   **`book_garage_service`**
     *   **For:** Routine maintenance, unusual sounds, unsualy smells, warning lights on the dashboard, or booking an inspection.
+
+LANGUAGE & TRANSCRIPTION RULES:
+- The user is always speaking English, regardless of their accent.
+- ALL transcriptions of user speech must be written in English using the Latin alphabet only.
+- Never output transcription text in any other script even if the phonemes sound similar to
+  another language. Always render what you hear as English words.
+- If a word is unclear, write your best English approximation — never switch scripts.
 """
