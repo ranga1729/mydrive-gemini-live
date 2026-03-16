@@ -15,18 +15,38 @@ Architecture
   restarts the Gemini session. When OFF the PCM bytes are discarded silently;
   the output_audio_transcription still arrives and is forwarded as text.
 
+Streaming audio design (v2)
+───────────────────────────
+  Auto-VAD is DISABLED. The backend drives speech-activity signals manually:
+
+    voice_start  →  send activity_start to Gemini
+                    launch _consume_gemini_responses as a background task so
+                    Gemini responses can arrive WHILE audio is still being sent
+    <binary PCM> →  forward each chunk to Gemini immediately (no buffering)
+    voice_end    →  send activity_end to Gemini
+                    await the background receive task to drain the full response
+
+  This means Gemini starts processing the first words while the user is still
+  speaking. The latency saving equals the full utterance duration — typically
+  2–8 seconds in practice.
+
+  Concurrency fix: during a voice turn the session_runner no longer blocks on
+  _consume_gemini_responses. Instead it keeps pulling frames from the inbox
+  (forwarding audio to Gemini) while a separate asyncio.Task drains Gemini's
+  response stream in parallel.
+
 Single endpoint
 ───────────────
   /ws/chat?session_id=<uuid>
 
   Client → Server (JSON)
     {"type": "text_input",  "text": "..."}
-    {"type": "voice_start"}                  # followed by raw binary PCM frames
-    {"type": "voice_end"}                    # flushes accumulated audio
-    {"type": "set_speaker", "enabled": bool} # toggle speaker mode on the fly
-    {"type": "interrupt"}                    # clear in-flight audio buffer
+    {"type": "voice_start"}
+    {"type": "voice_end"}
+    {"type": "set_speaker", "enabled": bool}
+    {"type": "interrupt"}
   Client → Server (binary)
-    raw 16-bit PCM chunks at 16 kHz (only while voice_start is active)
+    raw 16-bit PCM chunks at 16 kHz (streamed continuously while mic is open)
 
   Server → Client (JSON)
     {"type": "session_ready",        "session_id": "...", "speaker_mode": false}
@@ -74,22 +94,17 @@ logging.basicConfig(
 log = logging.getLogger("mydrive")
 
 # ──────────────────────────────────────────────────────────────
-# Configuration  (all tunables in one place)
+# Configuration
 # ──────────────────────────────────────────────────────────────
 
-GEMINI_API_KEY    = os.environ["GEMINI_KEY"]          # hard-fail if missing
-GEMINI_MODEL      = "gemini-2.5-flash-native-audio-preview-12-2025"
+GEMINI_API_KEY   = os.environ["GEMINI_KEY"]
+GEMINI_MODEL     = "gemini-2.5-flash-native-audio-preview-12-2025"
 
-# How long an idle session lives before it is torn down (seconds)
-SESSION_IDLE_TTL  = int(os.environ.get("SESSION_IDLE_TTL",  "300"))
-# How often the cleanup task wakes up (seconds)
-CLEANUP_INTERVAL  = int(os.environ.get("CLEANUP_INTERVAL",  "60"))
-# Inbox queue capacity (number of InputFrames)
-INBOX_MAX_SIZE    = int(os.environ.get("INBOX_MAX_SIZE",    "32"))
-# Outbox queue capacity (number of outgoing frames)
-OUTBOX_MAX_SIZE   = int(os.environ.get("OUTBOX_MAX_SIZE",   "256"))
-# Max raw audio bytes buffered per voice turn (~10 s at 16 kHz 16-bit mono)
-AUDIO_BUFFER_MAX  = int(os.environ.get("AUDIO_BUFFER_MAX",  str(10 * 16_000 * 2)))
+SESSION_IDLE_TTL = int(os.environ.get("SESSION_IDLE_TTL", "300"))
+CLEANUP_INTERVAL = int(os.environ.get("CLEANUP_INTERVAL", "60"))
+# Raised from 32: many small audio-chunk frames arrive during a voice turn
+INBOX_MAX_SIZE   = int(os.environ.get("INBOX_MAX_SIZE",   "512"))
+OUTBOX_MAX_SIZE  = int(os.environ.get("OUTBOX_MAX_SIZE",  "256"))
 
 # ──────────────────────────────────────────────────────────────
 # Gemini configuration
@@ -208,8 +223,9 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
     },
 ]
 
-# Built once; reused for every new Gemini session.
-# Always AUDIO modality → output_audio_transcription always available as text reply.
+# Auto-VAD is DISABLED so we drive activity_start / activity_end ourselves.
+# This lets us forward audio chunks to Gemini as they arrive from the client
+# instead of accumulating the full utterance and sending it as a batch.
 GEMINI_CONFIG = types.LiveConnectConfig(
     response_modalities=["AUDIO"],
     system_instruction=SYSTEM_PROMPT,
@@ -223,6 +239,9 @@ GEMINI_CONFIG = types.LiveConnectConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="AOEDE")
         )
     ),
+    realtime_input_config=types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)
+    ),
 )
 
 # ──────────────────────────────────────────────────────────────
@@ -233,16 +252,13 @@ def _tool_roadside(issue_description: str, vehicle_info: str = "unknown") -> dic
     log.info("TOOL roadside | issue=%r vehicle=%r", issue_description, vehicle_info)
     return {"status": "dispatched", "service": "roadside_assistance", "eta_minutes": 20}
 
-
 def _tool_tow_truck(issue_description: str, vehicle_info: str = "unknown") -> dict:
     log.info("TOOL tow_truck | issue=%r vehicle=%r", issue_description, vehicle_info)
     return {"status": "dispatched", "service": "tow_truck", "eta_minutes": 35}
 
-
 def _tool_spare_parts(part_name: str, vehicle_info: str = "unknown") -> dict:
     log.info("TOOL spare_parts | part=%r vehicle=%r", part_name, vehicle_info)
     return {"status": "search_initiated", "part": part_name, "results_count": 12}
-
 
 def _tool_garage(service_type: str, vehicle_info: str = "unknown") -> dict:
     log.info("TOOL garage | service=%r vehicle=%r", service_type, vehicle_info)
@@ -252,14 +268,12 @@ def _tool_garage(service_type: str, vehicle_info: str = "unknown") -> dict:
         "next_available": "tomorrow 10:00 AM",
     }
 
-
 _TOOL_REGISTRY: dict[str, Any] = {
     "request_roadside_assistance": _tool_roadside,
     "request_tow_truck":           _tool_tow_truck,
     "search_spare_parts":          _tool_spare_parts,
     "book_garage_service":         _tool_garage,
 }
-
 
 def execute_tool(name: str, args: dict) -> dict:
     fn = _TOOL_REGISTRY.get(name)
@@ -275,26 +289,23 @@ def execute_tool(name: str, args: dict) -> dict:
         log.exception("Tool %s raised an unexpected error", name)
         return {"error": str(exc)}
 
-
 # ──────────────────────────────────────────────────────────────
 # Domain types
 # ──────────────────────────────────────────────────────────────
 
 class FrameKind(StrEnum):
-    TEXT        = "text"
-    AUDIO       = "audio"
-    SET_SPEAKER = "set_speaker"
-    STOP        = "stop"
-
+    TEXT           = "text"
+    AUDIO_CHUNK    = "audio_chunk"    # raw PCM — forward to Gemini immediately
+    ACTIVITY_START = "activity_start" # user opened mic
+    ACTIVITY_END   = "activity_end"   # user closed mic
+    SET_SPEAKER    = "set_speaker"
+    STOP           = "stop"
 
 @dataclass(slots=True)
 class InputFrame:
-    """A message travelling WebSocket handler → session runner."""
     kind:    FrameKind
     payload: Any  # str | bytes | bool | None
 
-
-# Sentinel pushed into the outbox to signal the forward loop to exit cleanly
 _OUTBOX_STOP = object()
 
 # ──────────────────────────────────────────────────────────────
@@ -303,12 +314,7 @@ _OUTBOX_STOP = object()
 
 @dataclass
 class SessionState:
-    """
-    All mutable state for one chat session.
-    speaker_mode is guarded by _lock because it is written by the receive_loop
-    (via the inbox → runner path) and read inside _process_gemini_turn — both
-    run concurrently in the same event-loop thread.  An asyncio.Lock is enough.
-    """
+    """All mutable state for one chat session."""
     session_id:  str
     inbox:       asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=INBOX_MAX_SIZE))
     outbox:      asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=OUTBOX_MAX_SIZE))
@@ -317,11 +323,8 @@ class SessionState:
     last_active: float         = field(default_factory=time.monotonic)
     worker_task: asyncio.Task | None = field(default=None, repr=False)
 
-    # ── speaker_mode accessors (async-safe) ───────────────────
-
     @property
     def speaker_mode(self) -> bool:
-        """Non-blocking read — safe for single-threaded async code."""
         return self._speaker
 
     async def set_speaker_mode(self, enabled: bool) -> None:
@@ -332,8 +335,6 @@ class SessionState:
         async with self._lock:
             return self._speaker
 
-    # ── helpers ────────────────────────────────────────────────
-
     def touch(self) -> None:
         self.last_active = time.monotonic()
 
@@ -341,143 +342,54 @@ class SessionState:
         return (time.monotonic() - self.last_active) > ttl
 
     async def send_outbox(self, frame: tuple | object) -> None:
-        """Non-blocking put; logs a warning and drops the frame if outbox is full."""
         try:
             self.outbox.put_nowait(frame)
         except asyncio.QueueFull:
             log.warning("[%s] outbox full — dropping frame", self.session_id)
 
-
 # ──────────────────────────────────────────────────────────────
-# Session runner  (one long-lived task per Gemini session)
+# Gemini response consumer
 # ──────────────────────────────────────────────────────────────
 
-async def session_runner(state: SessionState, client: genai.Client) -> None:
+async def _consume_gemini_responses(gsession: Any, state: SessionState) -> bool:
     """
-    Opens one Gemini Live session and processes turns until stopped.
+    Drain Gemini's response stream until turn_complete (or session close).
 
-    The runner:
-      • waits on the inbox queue for the next InputFrame
-      • forwards it to Gemini
-      • consumes all response events via _process_gemini_turn
-      • handles the special SET_SPEAKER frame without touching Gemini
-      • exits on STOP frame, inbox idle-timeout, or Gemini session close
+    Returns True  → turn completed normally.
+    Returns False → generator exhausted without turn_complete (session closed).
+
+    During voice turns this runs as a background asyncio.Task so that audio
+    forwarding (inbox → Gemini) and response receiving (Gemini → outbox) happen
+    concurrently. During text turns it is called directly (awaited inline).
     """
     sid = state.session_id
-    log.info("[%s] runner starting", sid)
-
-    try:
-        async with client.aio.live.connect(model=GEMINI_MODEL, config=GEMINI_CONFIG) as gsession:
-            log.info("[%s] Gemini session open", sid)
-            await state.send_outbox((
-                "session_ready",
-                {"session_id": sid, "speaker_mode": state.speaker_mode},
-            ))
-
-            while True:
-                # Use wait_for so the runner exits cleanly if the client
-                # disconnects and never sends anything again.
-                try:
-                    frame: InputFrame = await asyncio.wait_for(
-                        state.inbox.get(), timeout=SESSION_IDLE_TTL
-                    )
-                except TimeoutError:
-                    log.info("[%s] inbox idle timeout — closing session", sid)
-                    break
-
-                state.touch()
-
-                if frame.kind == FrameKind.STOP:
-                    log.info("[%s] stop signal received", sid)
-                    break
-
-                # ── Speaker-mode toggle (no Gemini interaction needed) ──
-
-                if frame.kind == FrameKind.SET_SPEAKER:
-                    await state.set_speaker_mode(bool(frame.payload))
-                    await state.send_outbox(("speaker_mode_updated", frame.payload))
-                    log.info("[%s] speaker_mode → %s", sid, frame.payload)
-                    continue
-
-                # ── Forward input to Gemini ────────────────────────────
-
-                try:
-                    if frame.kind == FrameKind.TEXT:
-                        await gsession.send_client_content(
-                            turns=[
-                                types.Content(
-                                    role="user",
-                                    parts=[types.Part(text=frame.payload)],
-                                )
-                            ],
-                            turn_complete=True,
-                        )
-                    elif frame.kind == FrameKind.AUDIO:
-                        await gsession.send_realtime_input(
-                            audio=types.Blob(
-                                data=frame.payload,
-                                mime_type="audio/pcm;rate=16000",
-                            )
-                        )
-                except Exception as exc:
-                    log.error("[%s] send to Gemini failed: %s", sid, exc)
-                    await state.send_outbox(("error", f"Failed to send to Gemini: {exc}"))
-                    continue
-
-                # ── Collect Gemini's response ──────────────────────────
-
-                session_alive = await _process_gemini_turn(gsession, state)
-                if not session_alive:
-                    log.warning("[%s] Gemini session ended unexpectedly", sid)
-                    break
-
-    except asyncio.CancelledError:
-        log.info("[%s] runner cancelled", sid)
-    except Exception as exc:
-        log.exception("[%s] runner fatal error: %s", sid, exc)
-        await state.send_outbox(("error", f"Session error: {exc}"))
-    finally:
-        log.info("[%s] runner shutting down", sid)
-        await state.send_outbox(("session_ended", None))
-        # Signal the forward loop to exit
-        await state.send_outbox(_OUTBOX_STOP)
-
-
-async def _process_gemini_turn(gsession: Any, state: SessionState) -> bool:
-    """
-    Consume all server events for one turn.
-
-    Returns True  → turn completed normally; session is still alive.
-    Returns False → generator exhausted without turn_complete; session closed.
-    """
-    sid = state.session_id
-    received_any = False
-
     try:
         async for response in gsession.receive():
-            received_any = True
             sc = response.server_content
 
             if sc is not None:
-
-                # ── Audio PCM ─────────────────────────────────────────
-                # Discard silently when speaker is off; text always arrives
-                # via output_audio_transcription below.
+                # ── Audio PCM output ──────────────────────────────────
                 if sc.model_turn and sc.model_turn.parts:
                     for part in sc.model_turn.parts:
                         if part.inline_data and part.inline_data.data:
                             if await state.get_speaker_mode():
                                 await state.send_outbox(("audio_pcm", part.inline_data.data))
 
-                # ── Output transcription → text reply for chat bubble ─
+                # ── Output transcription ──────────────────────────────
                 if sc.output_transcription and sc.output_transcription.text:
                     await state.send_outbox(("assistant_text", sc.output_transcription.text))
-                    log.debug("[%s] assistant_text: %s", sid, sc.output_transcription.text)
+                    log.debug("[%s] assistant_text: %r", sid, sc.output_transcription.text)
 
-                # ── Input transcription (voice turns only) ────────────
+                # ── Input transcription ───────────────────────────────
                 if sc.input_transcription and sc.input_transcription.text:
                     await state.send_outbox(("user_transcript", sc.input_transcription.text))
-                    log.debug("[%s] user_transcript: %s", sid, sc.input_transcription.text)
+                    log.debug("[%s] user_transcript: %r", sid, sc.input_transcription.text)
+
+                # ── Interrupted (barge-in from Gemini's side) ─────────
+                if sc.interrupted:
+                    log.info("[%s] Gemini interrupted generation", sid)
+                    await state.send_outbox(("turn_complete", None))
+                    return True
 
                 # ── Turn complete ─────────────────────────────────────
                 if sc.turn_complete:
@@ -489,9 +401,10 @@ async def _process_gemini_turn(gsession: Any, state: SessionState) -> bool:
             if response.tool_call:
                 await _handle_tool_call(gsession, state, response.tool_call)
 
-        # Generator exhausted without a turn_complete → Gemini closed the session
-        return False
+        return False  # generator exhausted — Gemini closed the session
 
+    except asyncio.CancelledError:
+        raise  # let the caller handle it
     except Exception as exc:
         log.error("[%s] error receiving from Gemini: %s", sid, exc)
         await state.send_outbox(("error", f"Gemini receive error: {exc}"))
@@ -499,25 +412,17 @@ async def _process_gemini_turn(gsession: Any, state: SessionState) -> bool:
 
 
 async def _handle_tool_call(gsession: Any, state: SessionState, tool_call: Any) -> None:
-    """
-    Execute every function call in a tool_call event, notify the client,
-    and send the results back to Gemini in a single send_tool_response call.
-    """
     sid = state.session_id
     function_responses: list[types.FunctionResponse] = []
 
     for fc in tool_call.function_calls:
         args = dict(fc.args) if fc.args else {}
         log.info("[%s] tool_call: %s(%s)", sid, fc.name, args)
-
         result = execute_tool(fc.name, args)
-
-        # Always notify the client regardless of speaker / input mode
         await state.send_outbox((
             "tool_call",
             {"tool": fc.name, "args": args, "result": result},
         ))
-
         function_responses.append(
             types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result})
         )
@@ -528,25 +433,173 @@ async def _handle_tool_call(gsession: Any, state: SessionState, tool_call: Any) 
         log.error("[%s] failed to send tool response: %s", sid, exc)
         await state.send_outbox(("error", f"Tool response failed: {exc}"))
 
+# ──────────────────────────────────────────────────────────────
+# Session runner
+# ──────────────────────────────────────────────────────────────
+
+async def session_runner(state: SessionState, client: genai.Client) -> None:
+    """
+    Opens one Gemini Live session and processes turns until stopped.
+
+    Voice-turn concurrency model
+    ────────────────────────────
+    ACTIVITY_START arrives
+      → send activity_start to Gemini
+      → spawn _consume_gemini_responses as a background Task (_recv_task)
+         Gemini may begin producing partial responses immediately.
+
+    AUDIO_CHUNK frames arrive (many, rapidly)
+      → each chunk is forwarded to Gemini via send_realtime_input immediately
+      → _recv_task runs concurrently, draining Gemini's response stream
+
+    ACTIVITY_END arrives
+      → send activity_end to Gemini (utterance is complete)
+      → await _recv_task to finish draining the full response
+
+    This gives true pipelining: Gemini processes the first half of the utterance
+    while the user is still saying the second half.
+    """
+    sid = state.session_id
+    log.info("[%s] runner starting", sid)
+
+    _recv_task: asyncio.Task | None = None  # active during voice turns only
+
+    try:
+        async with client.aio.live.connect(model=GEMINI_MODEL, config=GEMINI_CONFIG) as gsession:
+            log.info("[%s] Gemini session open", sid)
+            await state.send_outbox((
+                "session_ready",
+                {"session_id": sid, "speaker_mode": state.speaker_mode},
+            ))
+
+            while True:
+                try:
+                    frame: InputFrame = await asyncio.wait_for(
+                        state.inbox.get(), timeout=SESSION_IDLE_TTL
+                    )
+                except TimeoutError:
+                    log.info("[%s] inbox idle timeout — closing session", sid)
+                    break
+
+                state.touch()
+
+                # ── Stop ──────────────────────────────────────────────
+                if frame.kind == FrameKind.STOP:
+                    log.info("[%s] stop signal received", sid)
+                    break
+
+                # ── Speaker toggle ────────────────────────────────────
+                if frame.kind == FrameKind.SET_SPEAKER:
+                    await state.set_speaker_mode(bool(frame.payload))
+                    await state.send_outbox(("speaker_mode_updated", frame.payload))
+                    log.info("[%s] speaker_mode → %s", sid, frame.payload)
+                    continue
+
+                # ── Voice: activity start ─────────────────────────────
+                if frame.kind == FrameKind.ACTIVITY_START:
+                    log.debug("[%s] activity_start → Gemini", sid)
+                    try:
+                        await gsession.send_realtime_input(
+                            activity_start=types.ActivityStart()
+                        )
+                    except Exception as exc:
+                        log.error("[%s] activity_start failed: %s", sid, exc)
+                        await state.send_outbox(("error", f"activity_start failed: {exc}"))
+                        continue
+
+                    # Start the response consumer concurrently — it will drain
+                    # Gemini responses while AUDIO_CHUNK frames are still arriving.
+                    _recv_task = asyncio.create_task(
+                        _consume_gemini_responses(gsession, state),
+                        name=f"recv-{sid}",
+                    )
+                    continue
+
+                # ── Voice: stream PCM chunk immediately ───────────────
+                if frame.kind == FrameKind.AUDIO_CHUNK:
+                    try:
+                        await gsession.send_realtime_input(
+                            audio=types.Blob(
+                                data=frame.payload,
+                                mime_type="audio/pcm;rate=16000",
+                            )
+                        )
+                    except Exception as exc:
+                        # One dropped chunk is survivable — log and continue.
+                        log.warning("[%s] audio chunk send failed: %s", sid, exc)
+                    continue
+
+                # ── Voice: activity end ───────────────────────────────
+                if frame.kind == FrameKind.ACTIVITY_END:
+                    log.debug("[%s] activity_end → Gemini", sid)
+                    try:
+                        await gsession.send_realtime_input(
+                            activity_end=types.ActivityEnd()
+                        )
+                    except Exception as exc:
+                        log.error("[%s] activity_end failed: %s", sid, exc)
+                        await state.send_outbox(("error", f"activity_end failed: {exc}"))
+
+                    # Now block until the full response has been received.
+                    if _recv_task is not None:
+                        try:
+                            session_alive = await _recv_task
+                        except Exception as exc:
+                            log.error("[%s] recv task raised: %s", sid, exc)
+                            session_alive = False
+                        _recv_task = None
+                        if not session_alive:
+                            log.warning("[%s] Gemini session ended during voice turn", sid)
+                            break
+                    continue
+
+                # ── Text input ────────────────────────────────────────
+                if frame.kind == FrameKind.TEXT:
+                    try:
+                        await gsession.send_client_content(
+                            turns=[
+                                types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=frame.payload)],
+                                )
+                            ],
+                            turn_complete=True,
+                        )
+                    except Exception as exc:
+                        log.error("[%s] text send failed: %s", sid, exc)
+                        await state.send_outbox(("error", f"Failed to send to Gemini: {exc}"))
+                        continue
+
+                    # Text turns remain sequential — no concurrent task needed.
+                    session_alive = await _consume_gemini_responses(gsession, state)
+                    if not session_alive:
+                        log.warning("[%s] Gemini session ended after text turn", sid)
+                        break
+
+    except asyncio.CancelledError:
+        log.info("[%s] runner cancelled", sid)
+        if _recv_task and not _recv_task.done():
+            _recv_task.cancel()
+    except Exception as exc:
+        log.exception("[%s] runner fatal error: %s", sid, exc)
+        await state.send_outbox(("error", f"Session error: {exc}"))
+    finally:
+        if _recv_task and not _recv_task.done():
+            _recv_task.cancel()
+        log.info("[%s] runner shutting down", sid)
+        await state.send_outbox(("session_ended", None))
+        await state.send_outbox(_OUTBOX_STOP)
 
 # ──────────────────────────────────────────────────────────────
 # Session manager
 # ──────────────────────────────────────────────────────────────
 
 class SessionManager:
-    """
-    Singleton.
-    Registry for all active SessionState objects.
-    All mutations to _sessions are serialised through _lock (asyncio.Lock).
-    """
-
     def __init__(self, gemini_client: genai.Client) -> None:
         self._client:   genai.Client = gemini_client
         self._sessions: dict[str, SessionState] = {}
         self._lock:     asyncio.Lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task | None = None
-
-    # ── Relevant to App lifecycle ─────────────────────────────────────────
 
     async def start(self) -> None:
         self._cleanup_task = asyncio.create_task(
@@ -562,16 +615,12 @@ class SessionManager:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-
         async with self._lock:
             sids = list(self._sessions.keys())
         for sid in sids:
             await self._terminate(sid)
         log.info("SessionManager stopped")
 
-    # ── Relevant to Public API ────────────────────────────────────────────
-
-    # looks up or create a SesstionState for a session_id
     async def get_or_create(self, session_id: str) -> SessionState:
         async with self._lock:
             state = self._sessions.get(session_id)
@@ -579,7 +628,6 @@ class SessionManager:
                 state.touch()
                 log.info("[%s] reusing existing session", session_id)
                 return state
-
             state = SessionState(session_id=session_id)
             self._sessions[session_id] = state
 
@@ -594,18 +642,13 @@ class SessionManager:
         log.info("[%s] new session created", session_id)
         return state
 
-    # return the number of active sessions
     async def active_session_count(self) -> int:
         async with self._lock:
             return len(self._sessions)
-        
-    # return the list of active session_ids
+
     async def get_active_session_ids(self) -> list[str]:
-        """Return a list of all active session IDs (thread-safe)."""
         async with self._lock:
             return list(self._sessions.keys())
-
-    # ── Internal functions/helper functions ──────────────────────────────────────────────
 
     async def _on_runner_done(self, session_id: str) -> None:
         async with self._lock:
@@ -629,7 +672,6 @@ class SessionManager:
                 pass
         log.info("[%s] session terminated", session_id)
 
-    # Terminate sessions idle beyond SESSION_IDLE_TTL
     async def _cleanup_loop(self) -> None:
         while True:
             await asyncio.sleep(CLEANUP_INTERVAL)
@@ -642,58 +684,41 @@ class SessionManager:
                 log.info("[%s] cleaning up idle session", sid)
                 await self._terminate(sid)
 
-
 # ──────────────────────────────────────────────────────────────
 # WebSocket helpers
 # ──────────────────────────────────────────────────────────────
 
 async def _forward_loop(ws: WebSocket, state: SessionState) -> None:
-    """
-    Drain the session outbox and write frames to the WebSocket.
-    Exits when it dequeues the _OUTBOX_STOP sentinel or a send fails.
-    """
+    """Drain the outbox and write frames to the WebSocket."""
     while True:
         item = await state.outbox.get()
-
         if item is _OUTBOX_STOP:
             break
-
         kind, payload = item
-
         try:
             match kind:
                 case "audio_pcm":
                     await ws.send_bytes(payload)
-
                 case "session_ready":
                     await ws.send_text(json.dumps({"type": "session_ready", **payload}))
-
                 case "assistant_text":
                     await ws.send_text(json.dumps({"type": "assistant_text", "text": payload}))
-
                 case "user_transcript":
                     await ws.send_text(json.dumps({"type": "user_transcript", "text": payload}))
-
                 case "tool_call":
                     await ws.send_text(json.dumps({"type": "tool_call", **payload}))
-
                 case "turn_complete":
                     await ws.send_text(json.dumps({"type": "turn_complete"}))
-
                 case "speaker_mode_updated":
                     await ws.send_text(
                         json.dumps({"type": "speaker_mode_updated", "enabled": payload})
                     )
-
                 case "error":
                     await ws.send_text(json.dumps({"type": "error", "message": payload}))
-
                 case "session_ended":
                     await ws.send_text(json.dumps({"type": "session_ended"}))
-
                 case _:
                     log.warning("forward_loop: unknown frame kind %r", kind)
-
         except WebSocketDisconnect:
             log.info("[%s] WebSocket disconnected during send", state.session_id)
             break
@@ -706,14 +731,18 @@ async def _receive_loop(ws: WebSocket, state: SessionState) -> None:
     """
     Read messages from the WebSocket and push InputFrames onto the inbox.
 
-    Handles:
-      - binary frames  : raw 16-bit PCM audio (buffered between voice_start / voice_end)
-      - text frames    : JSON control messages
+    What changed from the original implementation
+    ─────────────────────────────────────────────
+    OLD: Binary PCM chunks were buffered in audio_buffer[]. On voice_end the
+         entire combined blob was sent to Gemini as one AUDIO frame.
+
+    NEW: Each binary PCM chunk becomes an AUDIO_CHUNK frame and is enqueued
+         immediately — no local buffering at all. voice_start emits
+         ACTIVITY_START; voice_end emits ACTIVITY_END. The session_runner
+         forwards each chunk to Gemini the moment it dequeues it.
     """
     sid = state.session_id
-    audio_buffer:   list[bytes] = []
-    audio_buffered: int         = 0   # bytes accumulated this voice turn
-    voice_active:   bool        = False
+    voice_active: bool = False
 
     try:
         while True:
@@ -723,20 +752,18 @@ async def _receive_loop(ws: WebSocket, state: SessionState) -> None:
                 log.info("[%s] client disconnected", sid)
                 return
 
-            # ── Binary: raw PCM during active voice turn ──────────────
+            # ── Binary: raw PCM → enqueue immediately, no buffering ────
             if "bytes" in message and message["bytes"]:
                 if not voice_active:
-                    log.debug("[%s] audio bytes received outside voice turn — ignoring", sid)
+                    log.debug("[%s] audio bytes outside voice turn — ignoring", sid)
                     continue
                 chunk: bytes = message["bytes"]
-                remaining = AUDIO_BUFFER_MAX - audio_buffered
-                if remaining <= 0:
-                    log.warning("[%s] audio buffer limit reached — dropping chunk", sid)
-                    continue
-                # Clamp chunk to remaining capacity to avoid going over budget
-                clipped = chunk[:remaining]
-                audio_buffer.append(clipped)
-                audio_buffered += len(clipped)
+                state.touch()
+                try:
+                    state.inbox.put_nowait(InputFrame(FrameKind.AUDIO_CHUNK, chunk))
+                except asyncio.QueueFull:
+                    # Prefer dropping one chunk over stalling the receive loop.
+                    log.warning("[%s] inbox full — dropping audio chunk", sid)
                 continue
 
             # ── Text: JSON control messages ───────────────────────────
@@ -770,27 +797,30 @@ async def _receive_loop(ws: WebSocket, state: SessionState) -> None:
 
                 case "voice_start":
                     if voice_active:
-                        log.debug("[%s] voice_start received while already active — resetting", sid)
-                    audio_buffer.clear()
-                    audio_buffered = 0
+                        log.debug("[%s] voice_start while already active — resetting", sid)
                     voice_active = True
+                    state.touch()
                     log.debug("[%s] voice_start", sid)
+                    try:
+                        state.inbox.put_nowait(InputFrame(FrameKind.ACTIVITY_START, None))
+                    except asyncio.QueueFull:
+                        await ws.send_text(json.dumps({
+                            "type": "error", "message": "Server busy — try again shortly."
+                        }))
 
                 case "voice_end":
+                    if not voice_active:
+                        log.debug("[%s] voice_end without active turn — ignored", sid)
+                        continue
                     voice_active = False
-                    if audio_buffer:
-                        combined = b"".join(audio_buffer)
-                        audio_buffer.clear()
-                        audio_buffered = 0
-                        state.touch()
-                        try:
-                            state.inbox.put_nowait(InputFrame(FrameKind.AUDIO, combined))
-                        except asyncio.QueueFull:
-                            await ws.send_text(json.dumps({
-                                "type": "error", "message": "Server busy — try again shortly."
-                            }))
-                    else:
-                        log.debug("[%s] voice_end with empty buffer — ignored", sid)
+                    state.touch()
+                    log.debug("[%s] voice_end", sid)
+                    try:
+                        state.inbox.put_nowait(InputFrame(FrameKind.ACTIVITY_END, None))
+                    except asyncio.QueueFull:
+                        await ws.send_text(json.dumps({
+                            "type": "error", "message": "Server busy — try again shortly."
+                        }))
 
                 case "set_speaker":
                     enabled = bool(payload.get("enabled", False))
@@ -802,12 +832,10 @@ async def _receive_loop(ws: WebSocket, state: SessionState) -> None:
                         }))
 
                 case "interrupt":
-                    # Clear in-flight audio state; any currently-processing Gemini
-                    # turn cannot be cancelled mid-stream but stale audio is discarded.
-                    audio_buffer.clear()
-                    audio_buffered = 0
+                    # Reset local voice state. No stray audio chunks will be
+                    # forwarded because voice_active is False from this point.
                     voice_active = False
-                    log.debug("[%s] interrupt — audio buffer cleared", sid)
+                    log.debug("[%s] interrupt", sid)
 
                 case _:
                     await ws.send_text(json.dumps({
@@ -818,14 +846,12 @@ async def _receive_loop(ws: WebSocket, state: SessionState) -> None:
     except Exception as exc:
         log.error("[%s] receive_loop unexpected error: %s", sid, exc)
 
-
 # ──────────────────────────────────────────────────────────────
 # Application wiring
 # ──────────────────────────────────────────────────────────────
 
 gemini_client   = genai.Client(api_key=GEMINI_API_KEY)
 session_manager = SessionManager(gemini_client)
-
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -836,8 +862,7 @@ async def lifespan(_: FastAPI):
     await session_manager.stop()
     log.info("Application shutdown complete")
 
-
-app = FastAPI(title="MyDrive Chat API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="MyDrive Chat API", version="2.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -846,10 +871,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 def _get_manager() -> SessionManager:
     return session_manager
-
 
 # ──────────────────────────────────────────────────────────────
 # Endpoints
@@ -864,22 +887,15 @@ async def ws_chat(
     """
     Unified chat endpoint.
 
-    Query params
-    ────────────
     session_id  optional UUID — omit to start a brand-new chat.
                 Reuse the same UUID to resume a session (memory preserved as
                 long as the Gemini session is still alive).
     """
     await ws.accept()
-
     sid = session_id or str(uuid.uuid4())
     log.info("[%s] WebSocket connected", sid)
-
     state = await manager.get_or_create(sid)
-
     try:
-        # receive_loop and forward_loop run concurrently.
-        # asyncio.gather cancels the other when either exits.
         await asyncio.gather(
             _receive_loop(ws, state),
             _forward_loop(ws, state),
@@ -889,8 +905,6 @@ async def ws_chat(
     except Exception as exc:
         log.error("[%s] unhandled WebSocket error: %s", sid, exc)
     finally:
-        # WebSocket is gone; the session_runner keeps running so the Gemini
-        # session (and its conversation memory) survives reconnects.
         log.info("[%s] WebSocket handler exiting — session persists", sid)
 
 
