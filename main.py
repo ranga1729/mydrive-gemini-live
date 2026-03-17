@@ -129,7 +129,7 @@ GEMINI_CONFIG = types.LiveConnectConfig(
     tools=[{"function_declarations": TOOL_DECLARATIONS}],
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Eclipse")
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Puck")
         )
     ),
     realtime_input_config=types.RealtimeInputConfig(
