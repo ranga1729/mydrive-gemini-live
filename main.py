@@ -111,7 +111,7 @@ OUTBOX_MAX_SIZE  = int(os.environ.get("OUTBOX_MAX_SIZE",  "256"))
 # Gemini configuration
 # ──────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = SYSTEM__PROMPTS.SYSTEM_PROMPT_INFORMAL_SINHALA_IMPROVED
+SYSTEM_PROMPT = SYSTEM__PROMPTS.SYSTEM_PROMPT_FORMAL_SINHALA
 
 
 TOOL_DECLARATIONS: list[dict[str, Any]] = [
