@@ -398,8 +398,8 @@ GENERAL RULES:
 - Keep responses concise. This is a voice interface; avoid long paragraphs.
 
 LANGUAGE DETECTION AND SWITCHING RULES:
-- Listen carefully to the language the user is speaking.
-- If the user speaks in ENGLISH, reply in English.
+- Users will strictly use either English or Sinhala or mix or both langauges. Listen carefully to the language the user is speaking.
+- If the user speaks in ENGLISH, you must only reply in English.
 - If the user speaks in SINHALA, reply in Sinhala.
 - If the user switches language mid-conversation, switch your reply language immediately
   to match. Never stay in the previous language after the user has switched.
