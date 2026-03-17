@@ -114,7 +114,7 @@ OUTBOX_MAX_SIZE  = int(os.environ.get("OUTBOX_MAX_SIZE",  "256"))
 
 GEMINI_CONFIG = types.LiveConnectConfig(
     response_modalities=["AUDIO"],
-    system_instruction=SYSTEM__PROMPTS.SYSTEM_PROPMPT_WITH_SINHALA_EXAMPLES,
+    system_instruction=SYSTEM__PROMPTS.SYSTEM_PROMPT_EXPERIMENTAL,
     media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
     thinking_config=types.ThinkingConfig(thinking_budget=0, include_thoughts=False),
     output_audio_transcription={},
