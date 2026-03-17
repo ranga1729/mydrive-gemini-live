@@ -112,24 +112,17 @@ OUTBOX_MAX_SIZE  = int(os.environ.get("OUTBOX_MAX_SIZE",  "256"))
 # Gemini configuration
 # ──────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = SYSTEM__PROMPTS.SYSTEM_PROPMPT_WITH_SINHALA_EXAMPLES
-
-TOOL_DECLARATIONS = TOOLS.TOOLS
-
-# Auto-VAD is DISABLED so we drive activity_start / activity_end ourselves.
-# This lets us forward audio chunks to Gemini as they arrive from the client
-# instead of accumulating the full utterance and sending it as a batch.
 GEMINI_CONFIG = types.LiveConnectConfig(
     response_modalities=["AUDIO"],
-    system_instruction=SYSTEM_PROMPT,
+    system_instruction=SYSTEM__PROMPTS.SYSTEM_PROPMPT_WITH_SINHALA_EXAMPLES,
     media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
     thinking_config=types.ThinkingConfig(thinking_budget=0, include_thoughts=False),
     output_audio_transcription={},
     input_audio_transcription={},
-    tools=[{"function_declarations": TOOL_DECLARATIONS}],
+    tools=[{"function_declarations": TOOLS.TOOLS}],
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Puck")
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
         )
     ),
     realtime_input_config=types.RealtimeInputConfig(
