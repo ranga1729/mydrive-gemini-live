@@ -257,7 +257,7 @@ GEMINI_CONFIG = types.LiveConnectConfig(
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
         )
     ),
-    generation_config=0.7,
+    temperature=0.7,
     realtime_input_config=types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)
     ),
