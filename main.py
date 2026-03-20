@@ -246,7 +246,7 @@ def execute_tool(name: str, args: dict) -> dict:
 
 GEMINI_CONFIG = types.LiveConnectConfig(
     response_modalities=["AUDIO"],
-    system_instruction=SYSTEM__PROMPTS.SYSTEM_PROPMPT_WITH_SINHALA_EXAMPLES,
+    system_instruction=SYSTEM__PROMPTS.SYSTEM_PROMPT_IN_MARKDOWN,
     media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
     thinking_config=types.ThinkingConfig(thinking_budget=0, include_thoughts=False),
     output_audio_transcription={},
